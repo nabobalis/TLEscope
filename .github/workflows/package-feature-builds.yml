@@ -1,0 +1,62 @@
+name: Package feature builds
+
+on:
+  push:
+    branches:
+      - feature/multi-groundtracks-macos-app
+    paths:
+      - .github/workflows/package-feature-builds.yml
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make zip libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev libcurl4-openssl-dev
+      - name: Build Linux portable package
+        run: |
+          make linux
+          chmod +x dist/TLEscope-Linux-Portable/TLEscope
+          cd dist
+          zip -r ../TLEscope-Linux-x86_64-Portable.zip TLEscope-Linux-Portable
+      - name: Upload Linux package
+        uses: actions/upload-artifact@v4
+        with:
+          name: TLEscope-Linux-x86_64-Portable
+          path: TLEscope-Linux-x86_64-Portable.zip
+          retention-days: 14
+
+  macos-intel:
+    runs-on: macos-15-intel
+    env:
+      RAYLIB_VERSION: "5.5"
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build static Raylib
+        run: |
+          curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
+          tar -xzf raylib.tar.gz
+          make -C "raylib-${RAYLIB_VERSION}/src" PLATFORM=PLATFORM_DESKTOP RAYLIB_LIBTYPE=STATIC CUSTOM_CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -DGL_SILENCE_DEPRECATION"
+          mkdir -p .deps/raylib/include .deps/raylib/lib
+          cp "raylib-${RAYLIB_VERSION}/src/raylib.h" "raylib-${RAYLIB_VERSION}/src/raymath.h" "raylib-${RAYLIB_VERSION}/src/rlgl.h" .deps/raylib/include/
+          cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
+      - name: Build and verify Intel app
+        run: |
+          make app RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" MACOS_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+          file dist/TLEscope.app/Contents/MacOS/TLEscope | grep -q 'x86_64'
+          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope | grep -E '/(opt/homebrew|usr/local)/'; then
+            echo "Found non-system runtime dependency"
+            exit 1
+          fi
+          codesign --verify --deep --strict dist/TLEscope.app
+          ditto -c -k --sequesterRsrc --keepParent dist/TLEscope.app TLEscope-macOS-Intel.zip
+      - name: Upload Intel macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: TLEscope-macOS-Intel
+          path: TLEscope-macOS-Intel.zip
+          retention-days: 14
