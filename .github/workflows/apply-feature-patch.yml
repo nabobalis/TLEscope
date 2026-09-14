@@ -5,6 +5,7 @@ on:
     branches:
       - feature/multi-groundtracks-macos-app
     paths:
+      - .github/workflows/apply-feature-patch.yml
       - .github/scripts/apply-feature.py
 
 permissions:
@@ -24,7 +25,10 @@ jobs:
           fetch-depth: 0
 
       - name: Apply source changes
-        run: python3 .github/scripts/apply-feature.py
+        run: |
+          cp .github/workflows/build.yml /tmp/build.yml
+          python3 .github/scripts/apply-feature.py
+          cp /tmp/build.yml .github/workflows/build.yml
 
       - name: Build static Raylib 5.5
         run: |
@@ -58,10 +62,9 @@ jobs:
       - name: Commit verified source changes
         run: |
           rm -f .github/scripts/apply-feature.py
-          rm -f .github/workflows/apply-feature-patch.yml
           rm -rf raylib.tar.gz raylib-${RAYLIB_VERSION} .deps build bin dist
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add src/main.c Makefile README.md .github/scripts/apply-feature.py
           git commit -m "feat: add multi-satellite 2D ground tracks and Intel macOS app"
           git push origin HEAD:feature/multi-groundtracks-macos-app
