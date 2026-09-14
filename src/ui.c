@@ -161,6 +161,7 @@ static float sm_x = 200.0f, sm_y = 150.0f;
 static Vector2 sat_mgr_scroll = {0};
 static char sat_search_text[64] = "";
 static bool edit_sat_search = false;
+static bool sat_mgr_active_only = false;
 
 static bool show_tle_mgr_dialog = false;
 static bool drag_tle_mgr = false;
@@ -2543,9 +2544,24 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             bool doCheckAll = GuiButton((Rectangle){sm_x + smWindow.width - 75 * cfg->ui_scale, sm_y + 35 * cfg->ui_scale, 30 * cfg->ui_scale, 24 * cfg->ui_scale}, "#80#");
             bool doUncheckAll = GuiButton((Rectangle){sm_x + smWindow.width - 40 * cfg->ui_scale, sm_y + 35 * cfg->ui_scale, 30 * cfg->ui_scale, 24 * cfg->ui_scale}, "#79#");
 
+            int active_count = 0;
+            for (int i = 0; i < sat_count; i++)
+                if (satellites[i].is_active) active_count++;
+
+            bool active_only_before = sat_mgr_active_only;
+            GuiCheckBox((Rectangle){sm_x + 10 * cfg->ui_scale, sm_y + 65 * cfg->ui_scale, 18 * cfg->ui_scale, 18 * cfg->ui_scale}, "Active only", &sat_mgr_active_only);
+            DrawUIText(customFont, TextFormat("%d active", active_count),
+                       sm_x + smWindow.width - 86 * cfg->ui_scale, sm_y + 67 * cfg->ui_scale,
+                       14 * cfg->ui_scale, cfg->text_secondary);
+            if (active_only_before != sat_mgr_active_only)
+                sat_mgr_scroll = (Vector2){0};
+
             int filtered_indices[MAX_SATELLITES], filtered_count = 0;
             for (int i = 0; i < sat_count; i++)
             {
+                if (sat_mgr_active_only && !satellites[i].is_active)
+                    continue;
+
                 if (string_contains_ignore_case(satellites[i].name, sat_search_text) || 
                     string_contains_ignore_case(satellites[i].norad_id, sat_search_text) || 
                     string_contains_ignore_case(satellites[i].intl_designator, sat_search_text))
@@ -2585,7 +2601,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
                 GuiSetStyle(LISTVIEW, BORDER_COLOR_FOCUSED, ColorToInt(cfg->window_border_focus));
                 GuiSetStyle(LISTVIEW, BORDER_COLOR_PRESSED, ColorToInt(cfg->window_border_focus));
 
-                GuiScrollPanel((Rectangle){sm_x + 8 * cfg->ui_scale, sm_y + 70 * cfg->ui_scale, smWindow.width - 16 * cfg->ui_scale, smWindow.height - 70 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &sat_mgr_scroll, &viewRec);
+                GuiScrollPanel((Rectangle){sm_x + 8 * cfg->ui_scale, sm_y + 92 * cfg->ui_scale, smWindow.width - 16 * cfg->ui_scale, smWindow.height - 92 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &sat_mgr_scroll, &viewRec);
 
                 GuiSetStyle(DEFAULT, BORDER_COLOR_FOCUSED, oldFocusD);
                 GuiSetStyle(DEFAULT, BORDER_COLOR_PRESSED, oldPressD);
