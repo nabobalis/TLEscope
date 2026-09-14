@@ -1,0 +1,66 @@
+name: Verify track customization
+
+on:
+  push:
+    branches:
+      - feature/multi-groundtracks-macos-app
+    paths:
+      - .github/scripts/apply-track-customization.py
+      - .github/workflows/verify-track-customization.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      RAYLIB_VERSION: "5.5"
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/multi-groundtracks-macos-app
+          fetch-depth: 0
+
+      - name: Apply track customization
+        run: python3 .github/scripts/apply-track-customization.py
+
+      - name: Build static Raylib 5.5
+        run: |
+          curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
+          tar -xzf raylib.tar.gz
+          make -C "raylib-${RAYLIB_VERSION}/src" \
+            PLATFORM=PLATFORM_DESKTOP \
+            RAYLIB_LIBTYPE=STATIC \
+            CUSTOM_CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -DGL_SILENCE_DEPRECATION"
+          mkdir -p .deps/raylib/include .deps/raylib/lib
+          cp "raylib-${RAYLIB_VERSION}/src/raylib.h" \
+             "raylib-${RAYLIB_VERSION}/src/raymath.h" \
+             "raylib-${RAYLIB_VERSION}/src/rlgl.h" \
+             .deps/raylib/include/
+          cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
+
+      - name: Build and verify Intel macOS app
+        run: |
+          make app \
+            RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" \
+            RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" \
+            MACOS_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}"
+          file dist/TLEscope.app/Contents/MacOS/TLEscope | grep -q 'x86_64'
+          codesign --verify --deep --strict dist/TLEscope.app
+          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope | grep -E '/(opt/homebrew|usr/local)/'; then
+            echo "Found a non-system runtime dependency in the app bundle"
+            exit 1
+          fi
+
+      - name: Commit verified source changes
+        run: |
+          rm -f .github/scripts/apply-track-customization.py
+          rm -rf raylib.tar.gz raylib-${RAYLIB_VERSION} .deps build bin dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/types.h src/config.h src/config.c src/main.c src/ui.c README.md .github/scripts/apply-track-customization.py
+          git commit -m "feat: customize 2D mission ground tracks"
+          git push origin HEAD:feature/multi-groundtracks-macos-app
