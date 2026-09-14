@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 Marker home_location;
@@ -29,11 +30,18 @@ Color ParseHexColor(const char *hexStr, Color fallback)
     return (Color){(unsigned char)r, (unsigned char)g, (unsigned char)b, (unsigned char)a};
 }
 
+// High-contrast categorical colors for automatic 2D mission tracks.  The
+// ordering deliberately jumps around hue space so adjacent swatches remain
+// easy to distinguish on the dark world map.
 static const Color MISSION_TRACK_PALETTE[] = {
-    {  0, 174, 239, 255}, {255, 153,   0, 255}, {  0, 204, 136, 255},
-    {238, 102, 119, 255}, {187, 119, 255, 255}, {255, 221,  87, 255},
-    { 86, 180, 233, 255}, {230, 159,   0, 255}, {  0, 158, 115, 255},
-    {213,  94,   0, 255}, {204, 121, 167, 255}, {120, 220, 120, 255}
+    {  0, 181, 255, 255}, {255, 138,   0, 255}, {  0, 209, 125, 255},
+    {255,  77, 109, 255}, {182, 109, 255, 255}, {255, 212,  59, 255},
+    {  0, 229, 255, 255}, {255,  91, 239, 255}, {167, 244,  50, 255},
+    {255, 159, 159, 255}, {  0, 166, 166, 255}, {123,  97, 255, 255},
+    {255, 107,   0, 255}, {128,  64, 192, 255}, {  6, 214, 160, 255},
+    {239,  71, 111, 255}, { 58, 134, 255, 255}, {255, 176,   0, 255},
+    {131,  56, 236, 255}, { 36, 161,  72, 255}, {245,  93, 106, 255},
+    { 17, 138, 178, 255}, {251,  86,   7, 255}, {138, 201,  38, 255}
 };
 
 static void NormalizeNoradId(const char *src, char out[8])
@@ -74,8 +82,16 @@ Color GetMissionTrackColor(const AppConfig *config, const char *norad_id)
             if (strcmp(config->mission_track_colors[i].norad_id, normalized) == 0)
                 return config->mission_track_colors[i].color;
     }
-    unsigned long id = strtoul(normalized, NULL, 10);
-    return GetMissionTrackPaletteColor((int)(id % (unsigned long)GetMissionTrackPaletteSize()));
+    // Mix the NORAD id before selecting a palette slot.  The previous direct
+    // modulo assignment clustered nearby catalogue numbers and produced
+    // frequent duplicate/near-duplicate mission colors.
+    uint32_t hash = (uint32_t)strtoul(normalized, NULL, 10);
+    hash ^= hash >> 16;
+    hash *= 0x7feb352dU;
+    hash ^= hash >> 15;
+    hash *= 0x846ca68bU;
+    hash ^= hash >> 16;
+    return GetMissionTrackPaletteColor((int)(hash % (uint32_t)GetMissionTrackPaletteSize()));
 }
 
 void SetMissionTrackColor(AppConfig *config, const char *norad_id, Color color)

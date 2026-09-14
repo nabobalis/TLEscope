@@ -5,6 +5,7 @@
 
 void LoadAppConfig(const char *filename, AppConfig *config);
 void SaveAppConfig(const char *filename, AppConfig *config);
+Color ParseHexColor(const char *hexStr, Color fallback);
 
 int GetMissionTrackPaletteSize(void);
 Color GetMissionTrackPaletteColor(int index);

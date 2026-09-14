@@ -412,6 +412,19 @@ static bool si_has_been_placed = false;
 static bool si_rolled_up = false;
 static Satellite *last_selected_sat = NULL;
 static Vector2 si_scroll = {0};
+static Satellite *sat_color_picker_sat = NULL;
+static bool sat_color_picker_open = false;
+static bool edit_sat_color_hex = false;
+static Color sat_color_picker_value = {255, 255, 255, 255};
+static char sat_color_hex[8] = "#FFFFFF";
+
+static bool IsValidMissionHex(const char *text)
+{
+    if (!text || strlen(text) != 7 || text[0] != '#') return false;
+    for (int i = 1; i < 7; i++)
+        if (!isxdigit((unsigned char)text[i])) return false;
+    return true;
+}
 
 static void LoadTLEState(AppConfig *cfg)
 {
@@ -3925,7 +3938,7 @@ case WND_SCOPE:
                 double r2 = get_sat_range(sat, *ctx->current_epoch + dt, home_location);
                 double range_rate = (r2 - r1) / 0.2;
 
-                Rectangle contentRec = {0, 0, satInfoWindow.width - 32 * cfg->ui_scale, 700 * cfg->ui_scale};
+                Rectangle contentRec = {0, 0, satInfoWindow.width - 32 * cfg->ui_scale, (sat_color_picker_open ? 1030 : 850) * cfg->ui_scale};
                 Rectangle viewRec = {0};
 
                 int oldFocusD = GuiGetStyle(DEFAULT, BORDER_COLOR_FOCUSED);
@@ -3984,7 +3997,17 @@ case WND_SCOPE:
                 cur_y += 10 * cfg->ui_scale;
                 DRAW_HEADER("2D Track Color");
                 Color mission_color = GetMissionTrackColor(cfg, sat->norad_id);
+                if (sat_color_picker_sat != sat)
+                {
+                    sat_color_picker_sat = sat;
+                    sat_color_picker_open = false;
+                    edit_sat_color_hex = false;
+                    sat_color_picker_value = mission_color;
+                    snprintf(sat_color_hex, sizeof(sat_color_hex), "#%02X%02X%02X", mission_color.r, mission_color.g, mission_color.b);
+                }
+
                 int palette_count = GetMissionTrackPaletteSize();
+                int palette_rows = (palette_count + 5) / 6;
                 for (int p = 0; p < palette_count; p++)
                 {
                     int col = p % 6;
@@ -4002,17 +4025,69 @@ case WND_SCOPE:
                         SetMissionTrackColor(cfg, sat->norad_id, palette_color);
                         SaveAppConfig("settings.json", cfg);
                         mission_color = palette_color;
+                        sat_color_picker_value = palette_color;
+                        snprintf(sat_color_hex, sizeof(sat_color_hex), "#%02X%02X%02X", palette_color.r, palette_color.g, palette_color.b);
                     }
                 }
-                cur_y += 68 * cfg->ui_scale;
-                Rectangle auto_color = {cur_x + 5 * cfg->ui_scale, cur_y, 120 * cfg->ui_scale, 24 * cfg->ui_scale};
-                bool auto_color_clicked = GuiButton(auto_color, "Auto color");
+                cur_y += (palette_rows * 32 + 4) * cfg->ui_scale;
+
+                DrawUIText(customFont, "Hex:", cur_x + 5 * cfg->ui_scale, cur_y + 3 * cfg->ui_scale, 15 * cfg->ui_scale, cfg->text_main);
+                Rectangle preview = {cur_x + 42 * cfg->ui_scale, cur_y, 28 * cfg->ui_scale, 24 * cfg->ui_scale};
+                DrawRectangleRec(preview, mission_color);
+                DrawRectangleLinesEx(preview, 1.0f * cfg->ui_scale, cfg->text_secondary);
+                AdvancedTextBox((Rectangle){cur_x + 78 * cfg->ui_scale, cur_y, 92 * cfg->ui_scale, 24 * cfg->ui_scale}, sat_color_hex, 8, &edit_sat_color_hex, false);
+                bool apply_hex = GuiButton((Rectangle){cur_x + 178 * cfg->ui_scale, cur_y, 58 * cfg->ui_scale, 24 * cfg->ui_scale}, "Apply");
+                if (apply_hex && IsValidMissionHex(sat_color_hex))
+                {
+                    Color custom = ParseHexColor(sat_color_hex, mission_color);
+                    custom.a = 255;
+                    SetMissionTrackColor(cfg, sat->norad_id, custom);
+                    SaveAppConfig("settings.json", cfg);
+                    mission_color = custom;
+                    sat_color_picker_value = custom;
+                    snprintf(sat_color_hex, sizeof(sat_color_hex), "#%02X%02X%02X", custom.r, custom.g, custom.b);
+                    edit_sat_color_hex = false;
+                }
+                cur_y += 32 * cfg->ui_scale;
+
+                bool picker_clicked = GuiButton((Rectangle){cur_x + 5 * cfg->ui_scale, cur_y, 112 * cfg->ui_scale, 24 * cfg->ui_scale}, sat_color_picker_open ? "Hide picker" : "Custom picker");
+                bool auto_color_clicked = GuiButton((Rectangle){cur_x + 125 * cfg->ui_scale, cur_y, 112 * cfg->ui_scale, 24 * cfg->ui_scale}, "Auto color");
+                if (picker_clicked)
+                {
+                    sat_color_picker_open = !sat_color_picker_open;
+                    sat_color_picker_value = mission_color;
+                }
                 if (is_topmost && CheckCollisionPointRec(GetMousePosition(), viewRec) && auto_color_clicked)
                 {
                     ResetMissionTrackColor(cfg, sat->norad_id);
                     SaveAppConfig("settings.json", cfg);
+                    mission_color = GetMissionTrackColor(cfg, sat->norad_id);
+                    sat_color_picker_value = mission_color;
+                    snprintf(sat_color_hex, sizeof(sat_color_hex), "#%02X%02X%02X", mission_color.r, mission_color.g, mission_color.b);
+                    edit_sat_color_hex = false;
                 }
-                cur_y += 36 * cfg->ui_scale;
+                cur_y += 32 * cfg->ui_scale;
+
+                if (sat_color_picker_open)
+                {
+                    Color before_picker = sat_color_picker_value;
+                    GuiColorPicker((Rectangle){cur_x + 5 * cfg->ui_scale, cur_y, 220 * cfg->ui_scale, 130 * cfg->ui_scale}, NULL, &sat_color_picker_value);
+                    sat_color_picker_value.a = 255;
+                    if (before_picker.r != sat_color_picker_value.r || before_picker.g != sat_color_picker_value.g || before_picker.b != sat_color_picker_value.b)
+                        snprintf(sat_color_hex, sizeof(sat_color_hex), "#%02X%02X%02X", sat_color_picker_value.r, sat_color_picker_value.g, sat_color_picker_value.b);
+                    cur_y += 138 * cfg->ui_scale;
+                    if (GuiButton((Rectangle){cur_x + 5 * cfg->ui_scale, cur_y, 220 * cfg->ui_scale, 24 * cfg->ui_scale}, "Use custom color"))
+                    {
+                        SetMissionTrackColor(cfg, sat->norad_id, sat_color_picker_value);
+                        SaveAppConfig("settings.json", cfg);
+                        mission_color = sat_color_picker_value;
+                    }
+                    cur_y += 36 * cfg->ui_scale;
+                }
+                else
+                {
+                    cur_y += 4 * cfg->ui_scale;
+                }
 
                 DRAW_HEADER("Orbital Information");
                 DRAW_ROW("Altitude:", TextFormat("%.1f km", r_km - EARTH_RADIUS_KM));
