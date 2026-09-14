@@ -88,6 +88,27 @@ jobs:
         run: |
           curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
           tar -xzf raylib.tar.gz
+
+          # Raylib 5.5 bundles GLFW 3.4.  Its Cocoa backend passes NSEvent's
+          # buttonNumber through for "other" mouse buttons, while GLFW 3.4
+          # asserts that every button is <= GLFW_MOUSE_BUTTON_LAST (7) before
+          # reaching its own bounds check.  Some macOS mice/USB receivers emit
+          # higher button numbers, which turns an otherwise ignorable event into
+          # SIGABRT.  Current GLFW removed this upper-bound assertion.  Apply
+          # the same narrow fix until Raylib ships a GLFW version containing it.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("raylib-5.5/src/external/glfw/src/input.c")
+          s = p.read_text()
+          needle = "    assert(button <= GLFW_MOUSE_BUTTON_LAST);\n"
+          guard = "    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST)\n        return;\n"
+          if s.count(needle) != 1:
+              raise SystemExit("unexpected GLFW mouse-button assertion count")
+          if guard not in s:
+              raise SystemExit("expected GLFW mouse-button bounds guard not found")
+          p.write_text(s.replace(needle, "", 1))
+          PY
+
           make -C "raylib-${RAYLIB_VERSION}/src" \
             PLATFORM=PLATFORM_DESKTOP \
             RAYLIB_LIBTYPE=STATIC \
@@ -291,5 +312,6 @@ jobs:
             TLEscope-Linux-arm64-Portable.zip
             TLEscope-macOS.zip
             TLEscope-Win-Portable.zip
+            TLEscope-Linux-arm64-Portable.zip
             TLEscope-Win-arm64-Portable.zip
             TLEscope-Installer.exe
