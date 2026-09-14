@@ -47,6 +47,8 @@ You can find the roadmap here: [ROADMAP.md](https://github.com/aweeri/TLEscope/b
 
 ### **Download from GitHub**
 To download TLEscope, grab a portable zip from the [Relases tab](https://github.com/aweeri/TLEscope/releases), then extract it's contents into a directory of choice.
+
+The GitHub Actions macOS build produces a normal `TLEscope.app` inside `TLEscope-macOS.zip`. It is built for Intel (`x86_64`) with a macOS 11 deployment target and a statically linked Raylib, so users do not need Homebrew or a local compiler. Pull requests also produce the downloadable macOS artifact under the workflow run's **Artifacts** section.
 You can choose between nightly and complete relases:
 - [**Stable**](https://github.com/aweeri/TLEscope/releases) relases are properly versioned notable milestone builds. They may not have the latest features, but they are a stable and safe choice. 
 - [**Nightly**](https://github.com/aweeri/TLEscope/releases/tag/nightly) relases are always up to date with the latest commits, as long as they [compile correctly](https://github.com/aweeri/TLEscope/actions). Do not complain too much if things don't work as expected.

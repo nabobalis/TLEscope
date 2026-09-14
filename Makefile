@@ -42,6 +42,7 @@ APP_DIR     ?= /usr/share/applications
 
 # macOS (Apple Silicon / Intel)
 CC_MACOS = clang
+MACOS_DEPLOYMENT_TARGET ?= 11.0
 empty :=
 space := $(empty) $(empty)
 MACOS_PC_PATH := $(subst $(space),:,$(strip $(wildcard /opt/homebrew/lib/pkgconfig /usr/local/lib/pkgconfig)))
@@ -111,8 +112,8 @@ bin/TLEscope: $(OBJ) | bin
 	$(CC_LINUX) $(CFLAGS) -o $@ $^ $(LDFLAGS_LIN)
 
 bin/TLEscope-macos: $(SRC) | bin
-	@if ! $(MACOS_PKG_CONFIG_ENV) pkg-config --exists raylib 2>/dev/null; then echo "Error: raylib not found. Install with: brew install raylib"; exit 1; fi
-	$(CC_MACOS) $(CFLAGS) $(RAYLIB_CFLAGS) -o $@ $^ $(LDFLAGS_MACOS)
+	@if [ -z "$(RAYLIB_LIBS)" ] && ! $(MACOS_PKG_CONFIG_ENV) pkg-config --exists raylib 2>/dev/null; then echo "Error: raylib not found. Install with: brew install raylib"; exit 1; fi
+	MACOSX_DEPLOYMENT_TARGET=$(MACOS_DEPLOYMENT_TARGET) $(CC_MACOS) $(CFLAGS) -mmacosx-version-min=$(MACOS_DEPLOYMENT_TARGET) $(RAYLIB_CFLAGS) -o $@ $^ $(LDFLAGS_MACOS)
 
 bin/TLEscope.exe: $(SRC) | bin
 	$(CC_WIN) $(CFLAGS_WIN) -o $@ $^ $(LDFLAGS_WIN)
