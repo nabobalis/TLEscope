@@ -1,0 +1,42 @@
+name: Verify satellite manager active filter
+
+on:
+  push:
+    branches:
+      - feature/multi-groundtracks-macos-app
+    paths:
+      - .github/scripts/add-sat-manager-active-filter.py
+      - .github/workflows/verify-sat-manager-active-filter.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/multi-groundtracks-macos-app
+          fetch-depth: 0
+
+      - name: Apply active-only filter patch
+        run: python3 .github/scripts/add-sat-manager-active-filter.py
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev libcurl4-openssl-dev
+
+      - name: Build Linux portable package
+        run: make linux
+
+      - name: Commit verified source change
+        run: |
+          rm -f .github/scripts/add-sat-manager-active-filter.py
+          rm -rf build bin dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ui.c .github/scripts/add-sat-manager-active-filter.py
+          git commit -m "feat: filter satellite manager to active missions"
+          git push origin HEAD:feature/multi-groundtracks-macos-app
