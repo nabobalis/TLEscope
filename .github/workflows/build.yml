@@ -312,6 +312,5 @@ jobs:
             TLEscope-Linux-arm64-Portable.zip
             TLEscope-macOS.zip
             TLEscope-Win-Portable.zip
-            TLEscope-Linux-arm64-Portable.zip
             TLEscope-Win-arm64-Portable.zip
             TLEscope-Installer.exe
