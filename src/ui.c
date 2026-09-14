@@ -149,6 +149,7 @@ static bool show_polar_dialog = false;
 static bool show_doppler_dialog = false;
 static bool show_tle_warning = false;
 static bool show_exit_dialog = false;
+static bool ui_hidden = false;
 
 /* handle taskbar in fullscreen */
 static int last_drawable_height = 0;
@@ -941,6 +942,8 @@ void ToggleTLEWarning(void) { show_tle_warning = !show_tle_warning; }
 
 bool IsMouseOverUI(AppConfig *cfg)
 {
+    if (ui_hidden && !show_exit_dialog && !cfg->show_first_run_dialog)
+        return false;
     if (show_exit_dialog || cfg->show_first_run_dialog)
         return true;
     if (!ui_initialized)
@@ -1563,10 +1566,20 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
 {
     FinishPullIfDone(ctx, cfg);
 
-    *ctx->show_scope = show_scope_dialog;
+    // H toggles a clean map view.  Map content (satellites, labels and ground
+    // tracks) is rendered outside DrawGUI, so hiding the UI leaves those
+    // mission overlays visible while suppressing toolbar/status/dialog chrome.
+    if (!IsUITyping() && IsKeyPressed(KEY_H))
+        ui_hidden = !ui_hidden;
+
+    *ctx->show_scope = ui_hidden ? false : show_scope_dialog;
     *ctx->scope_az = scope_az;
     *ctx->scope_el = scope_el;
     *ctx->scope_beam = scope_beam;
+
+    // Keep first-run and exit confirmation dialogs reachable even in clean view.
+    if (ui_hidden && !show_exit_dialog && !cfg->show_first_run_dialog)
+        return;
 
     if (*ctx->selected_sat != last_selected_sat)
     {
