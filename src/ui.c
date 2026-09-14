@@ -840,7 +840,7 @@ static void FindSmartWindowPosition(float w, float h, AppConfig *cfg, float *out
     if (show_help)
         active[count++] = (Rectangle){hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale};
     if (show_settings)
-        active[count++] = (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale};
+        active[count++] = (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 700 * cfg->ui_scale};
     if (show_time_dialog)
         active[count++] = (Rectangle){td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale};
     if (show_passes_dialog)
@@ -959,7 +959,7 @@ bool IsMouseOverUI(AppConfig *cfg)
 
     if (show_help && CheckCollisionPointRec(GetMousePosition(), (Rectangle){hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale}))
         over_window = true;
-    if (show_settings && CheckCollisionPointRec(GetMousePosition(), (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale}))
+    if (show_settings && CheckCollisionPointRec(GetMousePosition(), (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 700 * cfg->ui_scale}))
         over_window = true;
     if (show_time_dialog && CheckCollisionPointRec(GetMousePosition(), (Rectangle){td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale}))
         over_window = true;
@@ -1615,7 +1615,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
 
     /* calculate interactive window rects */
     Rectangle helpWindow = {hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale};
-    Rectangle settingsWindow = {sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale};
+    Rectangle settingsWindow = {sw_x, sw_y, 250 * cfg->ui_scale, 700 * cfg->ui_scale};
     Rectangle timeWindow = {td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale};
     Rectangle tleWindow = {(GetScreenWidth() - 300 * cfg->ui_scale) / 2.0f, (GetScreenHeight() - 130 * cfg->ui_scale) / 2.0f, 300 * cfg->ui_scale, 130 * cfg->ui_scale};
     Rectangle passesWindow = {pd_x, pd_y, 357 * cfg->ui_scale, 380 * cfg->ui_scale};
@@ -1978,7 +1978,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
     {
         if (!show_settings)
         {
-            FindSmartWindowPosition(250 * cfg->ui_scale, 650 * cfg->ui_scale, cfg, &sw_x, &sw_y);
+            FindSmartWindowPosition(250 * cfg->ui_scale, 700 * cfg->ui_scale, cfg, &sw_x, &sw_y);
             sprintf(text_fps, "%d", cfg->target_fps);
         }
         show_settings = !show_settings;
@@ -3990,7 +3990,8 @@ case WND_SCOPE:
                 }
                 cur_y += 68 * cfg->ui_scale;
                 Rectangle auto_color = {cur_x + 5 * cfg->ui_scale, cur_y, 120 * cfg->ui_scale, 24 * cfg->ui_scale};
-                if (is_topmost && CheckCollisionPointRec(GetMousePosition(), viewRec) && GuiButton(auto_color, "Auto color"))
+                bool auto_color_clicked = GuiButton(auto_color, "Auto color");
+                if (is_topmost && CheckCollisionPointRec(GetMousePosition(), viewRec) && auto_color_clicked)
                 {
                     ResetMissionTrackColor(cfg, sat->norad_id);
                     SaveAppConfig("settings.json", cfg);
