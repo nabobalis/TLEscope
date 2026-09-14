@@ -75,19 +75,44 @@ jobs:
           retention-days: 14
 
   build-macos:
-    name: Build macOS
-    runs-on: macos-latest
+    name: Build macOS Intel app
+    runs-on: macos-15-intel
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install macOS Build Dependencies
+      - name: Build static Raylib for a self-contained Intel app
+        env:
+          RAYLIB_VERSION: "5.5"
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
-          brew install raylib pkg-config
+          curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
+          tar -xzf raylib.tar.gz
+          make -C "raylib-${RAYLIB_VERSION}/src" \
+            PLATFORM=PLATFORM_DESKTOP \
+            RAYLIB_LIBTYPE=STATIC \
+            CUSTOM_CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -DGL_SILENCE_DEPRECATION"
+          mkdir -p .deps/raylib/include .deps/raylib/lib
+          cp "raylib-${RAYLIB_VERSION}/src/raylib.h" \
+             "raylib-${RAYLIB_VERSION}/src/raymath.h" \
+             "raylib-${RAYLIB_VERSION}/src/rlgl.h" \
+             .deps/raylib/include/
+          cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
 
-      - name: Compile and Bundle .app
-        # bundler compiles the icon + ad-hoc signs natively on the runner
-        run: make app
+      - name: Compile and Bundle Intel .app
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          make app \
+            RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" \
+            RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" \
+            MACOS_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+          file dist/TLEscope.app/Contents/MacOS/TLEscope | grep -q 'x86_64'
+          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope | grep -E '/(opt/homebrew|usr/local)/'; then
+            echo "Found a non-system runtime dependency in the app bundle"
+            exit 1
+          fi
+          codesign --verify --deep --strict dist/TLEscope.app
 
       - name: Zip .app (preserves bundle structure and exec bits)
         run: ditto -c -k --sequesterRsrc --keepParent dist/TLEscope.app TLEscope-macOS.zip
@@ -95,7 +120,7 @@ jobs:
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TLEscope-macOS
+          name: TLEscope-macOS-Intel
           path: TLEscope-macOS.zip
           retention-days: 14
 
@@ -218,7 +243,7 @@ jobs:
           # Move installer out of its artifact subdirectory for flat publishing
           mv TLEscope-Installer/TLEscope-Installer.exe ../
           # macOS artifact is already a ditto-zipped .app, just move it up
-          mv TLEscope-macOS/TLEscope-macOS.zip ../
+          mv TLEscope-macOS-Intel/TLEscope-macOS.zip ../
           cd ..
 
       - name: Clean Existing Release Assets
