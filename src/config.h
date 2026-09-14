@@ -6,4 +6,10 @@
 void LoadAppConfig(const char *filename, AppConfig *config);
 void SaveAppConfig(const char *filename, AppConfig *config);
 
+int GetMissionTrackPaletteSize(void);
+Color GetMissionTrackPaletteColor(int index);
+Color GetMissionTrackColor(const AppConfig *config, const char *norad_id);
+void SetMissionTrackColor(AppConfig *config, const char *norad_id, Color color);
+void ResetMissionTrackColor(AppConfig *config, const char *norad_id);
+
 #endif // CONFIG_H

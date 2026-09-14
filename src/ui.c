@@ -840,7 +840,7 @@ static void FindSmartWindowPosition(float w, float h, AppConfig *cfg, float *out
     if (show_help)
         active[count++] = (Rectangle){hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale};
     if (show_settings)
-        active[count++] = (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 520 * cfg->ui_scale};
+        active[count++] = (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale};
     if (show_time_dialog)
         active[count++] = (Rectangle){td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale};
     if (show_passes_dialog)
@@ -959,7 +959,7 @@ bool IsMouseOverUI(AppConfig *cfg)
 
     if (show_help && CheckCollisionPointRec(GetMousePosition(), (Rectangle){hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale}))
         over_window = true;
-    if (show_settings && CheckCollisionPointRec(GetMousePosition(), (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 520 * cfg->ui_scale}))
+    if (show_settings && CheckCollisionPointRec(GetMousePosition(), (Rectangle){sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale}))
         over_window = true;
     if (show_time_dialog && CheckCollisionPointRec(GetMousePosition(), (Rectangle){td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale}))
         over_window = true;
@@ -1615,7 +1615,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
 
     /* calculate interactive window rects */
     Rectangle helpWindow = {hw_x, hw_y, HELP_WINDOW_W * cfg->ui_scale, HELP_WINDOW_H * cfg->ui_scale};
-    Rectangle settingsWindow = {sw_x, sw_y, 250 * cfg->ui_scale, 520 * cfg->ui_scale};
+    Rectangle settingsWindow = {sw_x, sw_y, 250 * cfg->ui_scale, 650 * cfg->ui_scale};
     Rectangle timeWindow = {td_x, td_y, 252 * cfg->ui_scale, 320 * cfg->ui_scale};
     Rectangle tleWindow = {(GetScreenWidth() - 300 * cfg->ui_scale) / 2.0f, (GetScreenHeight() - 130 * cfg->ui_scale) / 2.0f, 300 * cfg->ui_scale, 130 * cfg->ui_scale};
     Rectangle passesWindow = {pd_x, pd_y, 357 * cfg->ui_scale, 380 * cfg->ui_scale};
@@ -1978,7 +1978,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
     {
         if (!show_settings)
         {
-            FindSmartWindowPosition(250 * cfg->ui_scale, 520 * cfg->ui_scale, cfg, &sw_x, &sw_y);
+            FindSmartWindowPosition(250 * cfg->ui_scale, 650 * cfg->ui_scale, cfg, &sw_x, &sw_y);
             sprintf(text_fps, "%d", cfg->target_fps);
         }
         show_settings = !show_settings;
@@ -2807,8 +2807,33 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             sy += 25 * cfg->ui_scale;
             GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Skybox", &cfg->show_skybox);
             sy += 25 * cfg->ui_scale;
-            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "VSync", &cfg->hint_vsync);            
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "VSync", &cfg->hint_vsync);
             sy += 30 * cfg->ui_scale;
+
+            DrawLine(sw_x + 10 * cfg->ui_scale, sy, sw_x + settingsWindow.width - 10 * cfg->ui_scale, sy, cfg->ui_secondary);
+            sy += 12 * cfg->ui_scale;
+            DrawUIText(customFont, "2D Map", sw_x + 10 * cfg->ui_scale, sy, 16 * cfg->ui_scale, cfg->ui_accent);
+            sy += 24 * cfg->ui_scale;
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Mission Labels", &cfg->show_2d_mission_labels);
+            sy += 25 * cfg->ui_scale;
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Coverage Footprints", &cfg->show_2d_footprints);
+            sy += 30 * cfg->ui_scale;
+
+            GuiLabel((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 90 * cfg->ui_scale, 24 * cfg->ui_scale}, "Past orbits:");
+            if (GuiButton((Rectangle){sw_x + 108 * cfg->ui_scale, sy, 24 * cfg->ui_scale, 24 * cfg->ui_scale}, "-"))
+                if (cfg->groundtrack_past_orbits > 0) cfg->groundtrack_past_orbits--;
+            DrawUIText(customFont, TextFormat("%d", cfg->groundtrack_past_orbits), sw_x + 146 * cfg->ui_scale, sy + 3 * cfg->ui_scale, 15 * cfg->ui_scale, cfg->text_main);
+            if (GuiButton((Rectangle){sw_x + 196 * cfg->ui_scale, sy, 24 * cfg->ui_scale, 24 * cfg->ui_scale}, "+"))
+                if (cfg->groundtrack_past_orbits < 10) cfg->groundtrack_past_orbits++;
+            sy += 30 * cfg->ui_scale;
+
+            GuiLabel((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 90 * cfg->ui_scale, 24 * cfg->ui_scale}, "Future orbits:");
+            if (GuiButton((Rectangle){sw_x + 108 * cfg->ui_scale, sy, 24 * cfg->ui_scale, 24 * cfg->ui_scale}, "-"))
+                if (cfg->groundtrack_future_orbits > 0) cfg->groundtrack_future_orbits--;
+            DrawUIText(customFont, TextFormat("%d", cfg->groundtrack_future_orbits), sw_x + 146 * cfg->ui_scale, sy + 3 * cfg->ui_scale, 15 * cfg->ui_scale, cfg->text_main);
+            if (GuiButton((Rectangle){sw_x + 196 * cfg->ui_scale, sy, 24 * cfg->ui_scale, 24 * cfg->ui_scale}, "+"))
+                if (cfg->groundtrack_future_orbits < 10) cfg->groundtrack_future_orbits++;
+            sy += 35 * cfg->ui_scale;
 
             DrawLine(sw_x + 10 * cfg->ui_scale, sy, sw_x + settingsWindow.width - 10 * cfg->ui_scale, sy, cfg->ui_secondary);
             sy += 15 * cfg->ui_scale;
@@ -3884,7 +3909,7 @@ case WND_SCOPE:
                 double r2 = get_sat_range(sat, *ctx->current_epoch + dt, home_location);
                 double range_rate = (r2 - r1) / 0.2;
 
-                Rectangle contentRec = {0, 0, satInfoWindow.width - 32 * cfg->ui_scale, 580 * cfg->ui_scale};
+                Rectangle contentRec = {0, 0, satInfoWindow.width - 32 * cfg->ui_scale, 700 * cfg->ui_scale};
                 Rectangle viewRec = {0};
 
                 int oldFocusD = GuiGetStyle(DEFAULT, BORDER_COLOR_FOCUSED);
@@ -3941,6 +3966,37 @@ case WND_SCOPE:
                 DRAW_ROW("Intl Desig:", TextFormat("%.8s", sat->intl_designator));
 
                 cur_y += 10 * cfg->ui_scale;
+                DRAW_HEADER("2D Track Color");
+                Color mission_color = GetMissionTrackColor(cfg, sat->norad_id);
+                int palette_count = GetMissionTrackPaletteSize();
+                for (int p = 0; p < palette_count; p++)
+                {
+                    int col = p % 6;
+                    int row = p / 6;
+                    Rectangle swatch = {cur_x + 5 * cfg->ui_scale + col * 38 * cfg->ui_scale,
+                                        cur_y + row * 32 * cfg->ui_scale,
+                                        28 * cfg->ui_scale, 24 * cfg->ui_scale};
+                    Color palette_color = GetMissionTrackPaletteColor(p);
+                    DrawRectangleRec(swatch, palette_color);
+                    bool chosen = (palette_color.r == mission_color.r && palette_color.g == mission_color.g && palette_color.b == mission_color.b);
+                    DrawRectangleLinesEx(swatch, chosen ? 3.0f * cfg->ui_scale : 1.0f * cfg->ui_scale,
+                                         chosen ? WHITE : ApplyAlpha(cfg->text_secondary, 0.8f));
+                    if (is_topmost && CheckCollisionPointRec(GetMousePosition(), swatch) && CheckCollisionPointRec(GetMousePosition(), viewRec) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+                    {
+                        SetMissionTrackColor(cfg, sat->norad_id, palette_color);
+                        SaveAppConfig("settings.json", cfg);
+                        mission_color = palette_color;
+                    }
+                }
+                cur_y += 68 * cfg->ui_scale;
+                Rectangle auto_color = {cur_x + 5 * cfg->ui_scale, cur_y, 120 * cfg->ui_scale, 24 * cfg->ui_scale};
+                if (is_topmost && CheckCollisionPointRec(GetMousePosition(), viewRec) && GuiButton(auto_color, "Auto color"))
+                {
+                    ResetMissionTrackColor(cfg, sat->norad_id);
+                    SaveAppConfig("settings.json", cfg);
+                }
+                cur_y += 36 * cfg->ui_scale;
+
                 DRAW_HEADER("Orbital Information");
                 DRAW_ROW("Altitude:", TextFormat("%.1f km", r_km - EARTH_RADIUS_KM));
                 DRAW_ROW("Speed:", TextFormat("%.3f km/s", v_kms));

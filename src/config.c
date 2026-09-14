@@ -29,6 +29,93 @@ Color ParseHexColor(const char *hexStr, Color fallback)
     return (Color){(unsigned char)r, (unsigned char)g, (unsigned char)b, (unsigned char)a};
 }
 
+static const Color MISSION_TRACK_PALETTE[] = {
+    {  0, 174, 239, 255}, {255, 153,   0, 255}, {  0, 204, 136, 255},
+    {238, 102, 119, 255}, {187, 119, 255, 255}, {255, 221,  87, 255},
+    { 86, 180, 233, 255}, {230, 159,   0, 255}, {  0, 158, 115, 255},
+    {213,  94,   0, 255}, {204, 121, 167, 255}, {120, 220, 120, 255}
+};
+
+static void NormalizeNoradId(const char *src, char out[8])
+{
+    int j = 0;
+    if (src)
+    {
+        for (int i = 0; i < 7 && src[i] && j < 7; i++)
+        {
+            if (isdigit((unsigned char)src[i])) out[j++] = src[i];
+            else if (j > 0) break;
+        }
+    }
+    out[j] = '\0';
+}
+
+int GetMissionTrackPaletteSize(void)
+{
+    return (int)(sizeof(MISSION_TRACK_PALETTE) / sizeof(MISSION_TRACK_PALETTE[0]));
+}
+
+Color GetMissionTrackPaletteColor(int index)
+{
+    int count = GetMissionTrackPaletteSize();
+    if (count <= 0) return WHITE;
+    index %= count;
+    if (index < 0) index += count;
+    return MISSION_TRACK_PALETTE[index];
+}
+
+Color GetMissionTrackColor(const AppConfig *config, const char *norad_id)
+{
+    char normalized[8] = {0};
+    NormalizeNoradId(norad_id, normalized);
+    if (config)
+    {
+        for (int i = 0; i < config->mission_track_color_count; i++)
+            if (strcmp(config->mission_track_colors[i].norad_id, normalized) == 0)
+                return config->mission_track_colors[i].color;
+    }
+    unsigned long id = strtoul(normalized, NULL, 10);
+    return GetMissionTrackPaletteColor((int)(id % (unsigned long)GetMissionTrackPaletteSize()));
+}
+
+void SetMissionTrackColor(AppConfig *config, const char *norad_id, Color color)
+{
+    if (!config) return;
+    char normalized[8] = {0};
+    NormalizeNoradId(norad_id, normalized);
+    if (!normalized[0]) return;
+    for (int i = 0; i < config->mission_track_color_count; i++)
+    {
+        if (strcmp(config->mission_track_colors[i].norad_id, normalized) == 0)
+        {
+            config->mission_track_colors[i].color = color;
+            return;
+        }
+    }
+    if (config->mission_track_color_count >= MAX_MISSION_TRACK_COLORS) return;
+    MissionTrackColor *entry = &config->mission_track_colors[config->mission_track_color_count++];
+    strncpy(entry->norad_id, normalized, sizeof(entry->norad_id) - 1);
+    entry->norad_id[sizeof(entry->norad_id) - 1] = '\0';
+    entry->color = color;
+}
+
+void ResetMissionTrackColor(AppConfig *config, const char *norad_id)
+{
+    if (!config) return;
+    char normalized[8] = {0};
+    NormalizeNoradId(norad_id, normalized);
+    for (int i = 0; i < config->mission_track_color_count; i++)
+    {
+        if (strcmp(config->mission_track_colors[i].norad_id, normalized) == 0)
+        {
+            for (int j = i; j < config->mission_track_color_count - 1; j++)
+                config->mission_track_colors[j] = config->mission_track_colors[j + 1];
+            config->mission_track_color_count--;
+            return;
+        }
+    }
+}
+
 static bool ParseJsonBool(const char *text, const char *key, bool defaultValue)
 {
     if (!text || !key)
@@ -70,6 +157,11 @@ void LoadAppConfig(const char *filename, AppConfig *config)
     config->show_first_run_dialog = false; //default
     config->hint_vsync = true;       // default
     config->custom_tle_source_count = 0;
+    config->mission_track_color_count = 0;
+    config->groundtrack_past_orbits = 1;
+    config->groundtrack_future_orbits = 2;
+    config->show_2d_mission_labels = true;
+    config->show_2d_footprints = false;
 
     if (FileExists(filename))
     {
@@ -121,6 +213,12 @@ void LoadAppConfig(const char *filename, AppConfig *config)
             PARSE_FLOAT("ui_scale", ui_scale);
             PARSE_FLOAT("earth_rotation_offset", earth_rotation_offset);
             PARSE_FLOAT("orbits_to_draw", orbits_to_draw);
+            PARSE_INT("groundtrack_past_orbits", groundtrack_past_orbits);
+            PARSE_INT("groundtrack_future_orbits", groundtrack_future_orbits);
+            if (config->groundtrack_past_orbits < 0) config->groundtrack_past_orbits = 0;
+            if (config->groundtrack_past_orbits > 10) config->groundtrack_past_orbits = 10;
+            if (config->groundtrack_future_orbits < 0) config->groundtrack_future_orbits = 0;
+            if (config->groundtrack_future_orbits > 10) config->groundtrack_future_orbits = 10;
 
             config->show_clouds = ParseJsonBool(text, "show_clouds", config->show_clouds);
             config->show_night_lights = ParseJsonBool(text, "show_night_lights", config->show_night_lights);
@@ -132,6 +230,8 @@ void LoadAppConfig(const char *filename, AppConfig *config)
             config->show_scattering = ParseJsonBool(text, "show_scattering", config->show_scattering);
             config->hint_vsync = ParseJsonBool(text, "hint_vsync", config->hint_vsync);
             config->show_first_run_dialog = ParseJsonBool(text, "show_first_run_dialog", config->show_first_run_dialog);
+            config->show_2d_mission_labels = ParseJsonBool(text, "show_2d_mission_labels", config->show_2d_mission_labels);
+            config->show_2d_footprints = ParseJsonBool(text, "show_2d_footprints", config->show_2d_footprints);
 
             // load manual TLEs
             char *mt_ptr = strstr(text, "\"manual_tles\"");
@@ -202,6 +302,41 @@ void LoadAppConfig(const char *filename, AppConfig *config)
                         config->custom_tle_source_count++;
                     }
                     cts_ptr = obj_end + 1;
+                }
+            }
+
+            // load per-mission 2D ground-track color overrides
+            char *mc_ptr = strstr(text, "\"mission_track_colors\"");
+            if (mc_ptr)
+            {
+                char *array_start = strchr(mc_ptr, '[');
+                char *array_end = array_start ? strchr(array_start, ']') : NULL;
+                if (array_start && array_end)
+                {
+                    char *curr = array_start + 1;
+                    while (curr < array_end && config->mission_track_color_count < MAX_MISSION_TRACK_COLORS)
+                    {
+                        char *obj_start = strchr(curr, '{');
+                        if (!obj_start || obj_start >= array_end) break;
+                        char *obj_end = strchr(obj_start, '}');
+                        if (!obj_end || obj_end > array_end) break;
+                        char *norad_ptr = strstr(obj_start, "\"norad\"");
+                        char *color_ptr = strstr(obj_start, "\"color\"");
+                        if (norad_ptr && norad_ptr < obj_end && color_ptr && color_ptr < obj_end)
+                        {
+                            char norad_raw[16] = {0};
+                            char color_raw[16] = {0};
+                            char *nq = strchr(strchr(norad_ptr, ':'), '"');
+                            char *cq = strchr(strchr(color_ptr, ':'), '"');
+                            if (nq && cq)
+                            {
+                                sscanf(nq + 1, "%15[^\"]", norad_raw);
+                                sscanf(cq + 1, "%15[^\"]", color_raw);
+                                SetMissionTrackColor(config, norad_raw, ParseHexColor(color_raw, WHITE));
+                            }
+                        }
+                        curr = obj_end + 1;
+                    }
                 }
             }
 
@@ -310,6 +445,10 @@ void LoadAppConfig(const char *filename, AppConfig *config)
         config->ui_scale = 1.15;
         config->earth_rotation_offset = 0.00;
         config->orbits_to_draw = 3.00;
+        config->groundtrack_past_orbits = 1;
+        config->groundtrack_future_orbits = 2;
+        config->show_2d_mission_labels = true;
+        config->show_2d_footprints = false;
         config->show_clouds = true;
         config->show_night_lights = true;
         config->show_markers = true;
@@ -407,6 +546,10 @@ void SaveAppConfig(const char *filename, AppConfig *config)
     fprintf(file, "    \"ui_scale\": %.2f,\n", config->ui_scale);
     fprintf(file, "    \"earth_rotation_offset\": %.2f,\n", config->earth_rotation_offset);
     fprintf(file, "    \"orbits_to_draw\": %.2f,\n", config->orbits_to_draw);
+    fprintf(file, "    \"groundtrack_past_orbits\": %d,\n", config->groundtrack_past_orbits);
+    fprintf(file, "    \"groundtrack_future_orbits\": %d,\n", config->groundtrack_future_orbits);
+    fprintf(file, "    \"show_2d_mission_labels\": %s,\n", config->show_2d_mission_labels ? "true" : "false");
+    fprintf(file, "    \"show_2d_footprints\": %s,\n", config->show_2d_footprints ? "true" : "false");
     fprintf(file, "    \"show_clouds\": %s,\n", config->show_clouds ? "true" : "false");
     fprintf(file, "    \"show_night_lights\": %s,\n", config->show_night_lights ? "true" : "false");
     fprintf(file, "    \"show_markers\": %s,\n", config->show_markers ? "true" : "false");
@@ -417,6 +560,19 @@ void SaveAppConfig(const char *filename, AppConfig *config)
     fprintf(file, "    \"show_skybox\": %s,\n", config->show_skybox ? "true" : "false");
     fprintf(file, "    \"hint_vsync\": %s,\n", config->hint_vsync ? "true" : "false");
     fprintf(file, "    \"show_first_run_dialog\": %s,\n", config->show_first_run_dialog ? "true" : "false");
+
+    if (config->mission_track_color_count > 0)
+    {
+        fprintf(file, "    \"mission_track_colors\": [\n");
+        for (int i = 0; i < config->mission_track_color_count; i++)
+        {
+            MissionTrackColor *entry = &config->mission_track_colors[i];
+            fprintf(file, "        {\"norad\": \"%s\", \"color\": \"#%02X%02X%02X\"}%s\n",
+                    entry->norad_id, entry->color.r, entry->color.g, entry->color.b,
+                    (i == config->mission_track_color_count - 1) ? "" : ",");
+        }
+        fprintf(file, "    ],\n");
+    }
 
     if (config->custom_tle_source_count > 0)
     {

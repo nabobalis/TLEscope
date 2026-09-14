@@ -13,7 +13,7 @@
 ### Not interested in the market pitch? [__Click Here__](#download-from-github) to skip directly to downloads.
 
 ### ​**Features**
-- **​Dual-View Visualization**: Seamlessly toggle between an interactive 3D orbital space and a 2D projection featuring accurate satellite ground tracks.
+- **​Dual-View Visualization**: Seamlessly toggle between an interactive 3D orbital space and a 2D projection featuring accurate satellite ground tracks. The 2D mission view can show all active mission names at once, uses individually configurable track colors, distinguishes dashed past tracks from solid predicted tracks, and lets you choose separate past/future orbit counts. Coverage footprints are optional.
 
 - **Accurate Terminator Line Simulation**: Easily preview sunlight conditions, in 2D and 3D.
 

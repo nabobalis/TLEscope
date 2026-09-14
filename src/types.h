@@ -17,6 +17,7 @@
 
 #define ORBIT_CACHE_SIZE 361
 #define MAX_CUSTOM_TLE_SOURCES 20
+#define MAX_MISSION_TRACK_COLORS 64
 
 // keeps track of satellite data
 typedef struct
@@ -60,6 +61,12 @@ typedef struct
     bool selected;
 } CustomTLESource;
 
+typedef struct
+{
+    char norad_id[8];
+    Color color;
+} MissionTrackColor;
+
 extern Satellite satellites[MAX_SATELLITES];
 extern int sat_count;
 
@@ -79,6 +86,10 @@ typedef struct
     float ui_scale;
     float earth_rotation_offset;
     float orbits_to_draw;
+    int groundtrack_past_orbits;
+    int groundtrack_future_orbits;
+    bool show_2d_mission_labels;
+    bool show_2d_footprints;
     float orbit_cache_drift_threshold_km;  // Recalculate cache if satellite drifts more than this (default 50 km)
     bool show_clouds;
     bool show_night_lights;
@@ -97,6 +108,9 @@ typedef struct
 
     char manual_tles[MAX_MANUAL_TLES][512];
     int manual_tle_count;
+
+    MissionTrackColor mission_track_colors[MAX_MISSION_TRACK_COLORS];
+    int mission_track_color_count;
 
     Color bg_color;
     Color orbit_normal;

@@ -42,6 +42,70 @@ static const char* GetAssetPath(const char* theme, const char* filename) {
 #include "ui.h"
 #include "rotator.h"
 
+#define MAX_2D_TRACK_ORBITS 10
+#define TRACK_SEGMENTS_PER_ORBIT 120
+#define MAX_2D_TRACK_SEGMENTS (MAX_2D_TRACK_ORBITS * 2 * TRACK_SEGMENTS_PER_ORBIT)
+
+static int Clamp2DTrackOrbits(int count)
+{
+    if (count < 0) return 0;
+    if (count > MAX_2D_TRACK_ORBITS) return MAX_2D_TRACK_ORBITS;
+    return count;
+}
+
+static void DrawGroundTrack2D(Satellite *sat, const AppConfig *cfg, double current_epoch,
+                              float map_w, float map_h, float zoom, float alpha,
+                              bool highlighted, Color track_color, int past_orbits,
+                              int future_orbits)
+{
+    past_orbits = Clamp2DTrackOrbits(past_orbits);
+    future_orbits = Clamp2DTrackOrbits(future_orbits);
+    int past_segments = past_orbits * TRACK_SEGMENTS_PER_ORBIT;
+    int future_segments = future_orbits * TRACK_SEGMENTS_PER_ORBIT;
+    int segments = past_segments + future_segments;
+    if (segments <= 0) return;
+
+    Vector2 track_pts[MAX_2D_TRACK_SEGMENTS + 1];
+    bool is_sunlit_arr[MAX_2D_TRACK_SEGMENTS + 1];
+    double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
+    double time_step = period_days / TRACK_SEGMENTS_PER_ORBIT;
+    Vector3 sun_dir = {0};
+    if (cfg->highlight_sunlit)
+        sun_dir = Vector3Normalize(calculate_sun_position(current_epoch));
+
+    for (int j = 0; j <= segments; j++)
+    {
+        int offset_segments = j - past_segments;
+        double t = current_epoch + offset_segments * time_step;
+        Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
+        get_map_coordinates(raw_pos, epoch_to_gmst(t), cfg->earth_rotation_offset,
+                            map_w, map_h, &track_pts[j].x, &track_pts[j].y);
+        if (cfg->highlight_sunlit)
+            is_sunlit_arr[j] = !is_sat_eclipsed(raw_pos, sun_dir);
+    }
+
+    for (int offset_i = -1; offset_i <= 1; offset_i++)
+    {
+        float x_off = offset_i * map_w;
+        for (int j = 1; j <= segments; j++)
+        {
+            bool is_past = (j <= past_segments);
+            if (is_past && j != past_segments && ((j / 3) % 2) != 0)
+                continue;
+            if (fabs(track_pts[j].x - track_pts[j - 1].x) >= map_w * 0.6f)
+                continue;
+
+            float time_alpha = is_past ? 0.45f : 0.95f;
+            if (cfg->highlight_sunlit && !is_sunlit_arr[j])
+                time_alpha *= 0.45f;
+            Color draw_col = ApplyAlpha(track_color, alpha * time_alpha);
+            DrawLineEx((Vector2){track_pts[j - 1].x + x_off, track_pts[j - 1].y},
+                       (Vector2){track_pts[j].x + x_off, track_pts[j].y},
+                       (highlighted ? 2.6f : 1.7f) / zoom, draw_col);
+        }
+    }
+}
+
 /* * shaders for day/night transition
  * uses dot product between surface normal and sun direction
  * casting a ray from the fragment towards the sun and calculating its minimum distance to the Moon's center in local space for solar eclipses
@@ -1491,7 +1555,7 @@ int main(void)
                 BeginScissorMode(sc_x, sc_y, sc_w, sc_h);
 
                 /* draw 2d footprint */
-                if (active_sat && has_footprint && active_sat->is_active && !(is_pov_mode && selected_sat != NULL))
+                if (cfg.show_2d_footprints && active_sat && has_footprint && active_sat->is_active && !(is_pov_mode && selected_sat != NULL))
                 {
                     for (int i = 0; i < FP_RINGS; i++)
                     {
@@ -1554,81 +1618,32 @@ int main(void)
                     float sat_alpha = is_unselected ? unselected_fade : 1.0f;
                     if (sat_alpha <= 0.0f)
                         continue;
-
                     bool is_hl = (active_sat == &satellites[i]);
-                    Color sCol = (selected_sat == &satellites[i]) ? cfg.sat_selected : (hovered_sat == &satellites[i]) ? cfg.sat_highlighted : cfg.sat_normal;
-                    sCol = ApplyAlpha(sCol, sat_alpha);
+                    Color mission_color = GetMissionTrackColor(&cfg, satellites[i].norad_id);
+                    Color sCol = ApplyAlpha(mission_color, sat_alpha);
 
-                    /* Draw ground tracks for all active satellites on the 2D map.
-                     * Keep the selected/hovered satellite brighter, but do not add
-                     * coverage footprints for every active satellite. To protect
-                     * large constellation views, fall back to the focused satellite
-                     * when more than 64 satellites are active. */
                     bool draw_multi_tracks = (active_render_count <= 64);
                     bool draw_this_track = draw_multi_tracks || is_hl;
                     if (draw_this_track && !(is_pov_mode && &satellites[i] == selected_sat))
                     {
-                        float orbit_span = fmaxf(cfg.orbits_to_draw, 0.25f);
-                        int segments = (int)fminf(1200.0f, fmaxf(120.0f, 200.0f * orbit_span));
-                        Vector2 track_pts[1201];
-                        bool is_sunlit_arr[1201];
+                        DrawGroundTrack2D(&satellites[i], &cfg, current_epoch, map_w, map_h,
+                                          Camera2DParams.zoom, sat_alpha, is_hl, mission_color,
+                                          cfg.groundtrack_past_orbits, cfg.groundtrack_future_orbits);
 
-                        double period_days = (2.0 * PI / satellites[i].mean_motion) / 86400.0;
-                        double span_days = period_days * orbit_span;
-                        double time_step = span_days / segments;
-                        double start_epoch = current_epoch - (span_days * 0.5);
-                        int now_index = segments / 2;
-
-                        Vector3 base_sun_dir = {0};
-                        if (cfg.highlight_sunlit)
-                            base_sun_dir = Vector3Normalize(calculate_sun_position(current_epoch));
-
-                        for (int j = 0; j <= segments; j++)
+                        if (is_hl)
                         {
-                            double t = start_epoch + (j * time_step);
-                            double t_unix = get_unix_from_epoch(t);
-                            Vector3 raw_pos = calculate_position(&satellites[i], t_unix);
-                            get_map_coordinates(raw_pos, epoch_to_gmst(t), cfg.earth_rotation_offset, map_w, map_h, &track_pts[j].x, &track_pts[j].y);
-                            if (cfg.highlight_sunlit)
-                                is_sunlit_arr[j] = !is_sat_eclipsed(raw_pos, base_sun_dir);
-                        }
-
-                        Color base_track_color = is_hl ? cfg.orbit_highlighted : cfg.orbit_normal;
-                        for (int offset_i = -1; offset_i <= 1; offset_i++)
-                        {
-                            float x_off = offset_i * map_w;
-                            for (int j = 1; j <= segments; j++)
+                            Vector2 peri2d, apo2d;
+                            get_apsis_2d(&satellites[i], current_epoch, false, gmst_deg, cfg.earth_rotation_offset, map_w, map_h, &peri2d);
+                            get_apsis_2d(&satellites[i], current_epoch, true, gmst_deg, cfg.earth_rotation_offset, map_w, map_h, &apo2d);
+                            for (int offset_i = -1; offset_i <= 1; offset_i++)
                             {
-                                if (fabs(track_pts[j].x - track_pts[j - 1].x) < map_w * 0.6f)
-                                {
-                                    float time_alpha = (j <= now_index) ? 0.40f : 0.90f;
-                                    Color drawCol = ApplyAlpha(base_track_color, sat_alpha * time_alpha);
-                                    if (cfg.highlight_sunlit)
-                                    {
-                                        Color light_color = is_sunlit_arr[j] ? cfg.sat_highlighted : cfg.orbit_normal;
-                                        drawCol = ApplyAlpha(light_color, sat_alpha * time_alpha);
-                                    }
-                                    DrawLineEx((Vector2){track_pts[j - 1].x + x_off, track_pts[j - 1].y},
-                                               (Vector2){track_pts[j].x + x_off, track_pts[j].y},
-                                               (is_hl ? 2.5f : 1.5f) / Camera2DParams.zoom, drawCol);
-                                }
-                            }
-
-                            /* Keep apsis markers as a focused-satellite detail instead
-                             * of multiplying them across the whole mission overview. */
-                            if (is_hl)
-                            {
-                                Vector2 peri2d, apo2d;
-                                get_apsis_2d(&satellites[i], current_epoch, false, gmst_deg, cfg.earth_rotation_offset, map_w, map_h, &peri2d);
-                                get_apsis_2d(&satellites[i], current_epoch, true, gmst_deg, cfg.earth_rotation_offset, map_w, map_h, &apo2d);
-                                DrawTexturePro(
-                                    periMark, (Rectangle){0, 0, periMark.width, periMark.height}, (Rectangle){peri2d.x + x_off, peri2d.y, mark_size_2d, mark_size_2d},
-                                    (Vector2){mark_size_2d / 2.f, mark_size_2d / 2.f}, 0.0f, ApplyAlpha(cfg.periapsis, sat_alpha)
-                                );
-                                DrawTexturePro(
-                                    apoMark, (Rectangle){0, 0, apoMark.width, apoMark.height}, (Rectangle){apo2d.x + x_off, apo2d.y, mark_size_2d, mark_size_2d},
-                                    (Vector2){mark_size_2d / 2.f, mark_size_2d / 2.f}, 0.0f, ApplyAlpha(cfg.apoapsis, sat_alpha)
-                                );
+                                float x_off = offset_i * map_w;
+                                DrawTexturePro(periMark, (Rectangle){0, 0, periMark.width, periMark.height},
+                                    (Rectangle){peri2d.x + x_off, peri2d.y, mark_size_2d, mark_size_2d},
+                                    (Vector2){mark_size_2d / 2.f, mark_size_2d / 2.f}, 0.0f, ApplyAlpha(cfg.periapsis, sat_alpha));
+                                DrawTexturePro(apoMark, (Rectangle){0, 0, apoMark.width, apoMark.height},
+                                    (Rectangle){apo2d.x + x_off, apo2d.y, mark_size_2d, mark_size_2d},
+                                    (Vector2){mark_size_2d / 2.f, mark_size_2d / 2.f}, 0.0f, ApplyAlpha(cfg.apoapsis, sat_alpha));
                             }
                         }
                     }
@@ -1644,9 +1659,11 @@ int main(void)
                                 (Vector2){m_size_2d / 2.f, m_size_2d / 2.f}, 0.0f, sCol
                             );
 
-                            if (is_hl && Camera2DParams.zoom > 0.1f)
+                            if (cfg.show_2d_mission_labels && (draw_multi_tracks || is_hl) && Camera2DParams.zoom > 0.1f)
                             {
-                                DrawUIText(customFont, satellites[i].name, sat_mx + (offset_i * map_w) + (m_size_2d / 2.f) + 4.f, sat_my - (m_size_2d / 2.f), m_text_2d, sCol);
+                                float label_x = sat_mx + (offset_i * map_w) + (m_size_2d / 2.f) + 4.f / Camera2DParams.zoom;
+                                float label_y = sat_my - (m_size_2d / 2.f);
+                                DrawUIText(customFont, satellites[i].name, label_x, label_y, m_text_2d, sCol);
                             }
                         }
                     }
@@ -1748,6 +1765,37 @@ int main(void)
             }
 
             EndMode2D();
+
+            /* Screen-space legend: make past/NOW/future semantics explicit. */
+            {
+                float lx = 18.0f * cfg.ui_scale;
+                float ly = 55.0f * cfg.ui_scale;
+                float lw = 320.0f * cfg.ui_scale;
+                float lh = 72.0f * cfg.ui_scale;
+                DrawRectangleRounded((Rectangle){lx, ly, lw, lh}, 0.08f, 6, ApplyAlpha(cfg.ui_bg, 0.85f));
+                DrawRectangleRoundedLinesEx((Rectangle){lx, ly, lw, lh}, 0.08f, 6, 1.0f, ApplyAlpha(cfg.ui_secondary, 0.7f));
+                DrawUIText(customFont, TextFormat("2D ground tracks: %d past / %d future orbits",
+                           cfg.groundtrack_past_orbits, cfg.groundtrack_future_orbits),
+                           lx + 10.0f * cfg.ui_scale, ly + 8.0f * cfg.ui_scale,
+                           14.0f * cfg.ui_scale, cfg.text_main);
+
+                float line_y = ly + 45.0f * cfg.ui_scale;
+                Color key = cfg.text_main;
+                for (int d = 0; d < 4; d++)
+                    DrawLineEx((Vector2){lx + (10 + d * 8) * cfg.ui_scale, line_y},
+                               (Vector2){lx + (14 + d * 8) * cfg.ui_scale, line_y},
+                               2.0f * cfg.ui_scale, ApplyAlpha(key, 0.5f));
+                DrawUIText(customFont, "PAST", lx + 47.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
+                           12.0f * cfg.ui_scale, cfg.text_secondary);
+                DrawCircleV((Vector2){lx + 115.0f * cfg.ui_scale, line_y}, 4.0f * cfg.ui_scale, key);
+                DrawUIText(customFont, "NOW", lx + 125.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
+                           12.0f * cfg.ui_scale, cfg.text_main);
+                DrawLineEx((Vector2){lx + 178.0f * cfg.ui_scale, line_y},
+                           (Vector2){lx + 218.0f * cfg.ui_scale, line_y},
+                           2.0f * cfg.ui_scale, key);
+                DrawUIText(customFont, "FUTURE", lx + 226.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
+                           12.0f * cfg.ui_scale, cfg.text_main);
+            }
         }
         else
         {
