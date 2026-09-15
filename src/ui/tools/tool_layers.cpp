@@ -48,6 +48,14 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
     DrawLayerCheckbox("Ground Coverage", &cfg->show_ground_coverage, ICON_FA_ROUTE, "Show the line-of-sight ground coverage footprint");
     DrawLayerCheckbox("Apsides", &cfg->show_apsides, ICON_FA_CIRCLE_DOT, "Show perigee/apogee markers and altitude labels");
 
+    ImGui::Separator();
+    float future_orbits = cfg->orbits_to_draw;
+    if (ImGui::SliderFloat("Future Orbits", &future_orbits, 0.25f, 10.0f, "%.2f"))
+        cfg->orbits_to_draw = future_orbits;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Number of predicted orbits shown on the 2D map");
+    ImGui::Separator();
+
     /* Labels layer: master toggle + Sel/All scope dropdown (see labels.h / labels.cpp) */
     bool labels_enabled = ToolSettingGetBool(cfg, LABELS_KEY_ENABLED, true);
     bool labels_prev = labels_enabled;
