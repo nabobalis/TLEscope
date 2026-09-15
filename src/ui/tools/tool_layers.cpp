@@ -16,6 +16,8 @@
 #include "imgui.h"
 #include "IconsFontAwesome6.h"
 
+static const char *PAST_ORBITS_KEY = "groundtracks.past_orbits";
+
 void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
 {
     (void)ctx;
@@ -45,6 +47,11 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
     DrawLayerCheckbox("Slant Range", &cfg->show_slant_range, ICON_FA_RULER, "Show slant range line to home");
     DrawLayerCheckbox("Ground Coverage", &cfg->show_ground_coverage, ICON_FA_ROUTE, "Show the line-of-sight ground coverage footprint");
     DrawLayerCheckbox("Apsides", &cfg->show_apsides, ICON_FA_CIRCLE_DOT, "Show perigee/apogee markers and altitude labels");
+
+    int past_orbits = ToolSettingGetInt(cfg, PAST_ORBITS_KEY, 1);
+    if (ImGui::SliderInt("Past Orbits", &past_orbits, 0, 10))
+        ToolSettingSetInt(cfg, PAST_ORBITS_KEY, past_orbits);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of historical orbits shown on the 2D map");
 
     ImGui::Separator();
 
@@ -77,19 +84,21 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
     ImGui::PopTextWrapPos();
 }
 
-static void DrawPastTrack2D(const SceneContext *sctx, Satellite *sat)
+static void DrawPastTrack2D(const SceneContext *sctx, Satellite *sat, int past_orbits)
 {
-    if (sat->mean_motion <= 0.0)
+    if (sat->mean_motion <= 0.0 || past_orbits <= 0)
         return;
 
-    constexpr int segments = 400;
-    Vector2 points[segments + 1];
+    int segments = 400 * past_orbits;
+    if (segments > 4000) segments = 4000;
+    Vector2 points[4001];
     const double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
-    const double time_step = period_days / segments;
+    const double span_days = period_days * past_orbits;
+    const double time_step = span_days / segments;
 
     for (int j = 0; j <= segments; ++j)
     {
-        const double t = sctx->current_epoch - (segments - j) * time_step;
+        const double t = sctx->current_epoch - span_days + j * time_step;
         const Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
         get_map_coordinates(raw_pos, epoch_to_gmst(t), sctx->earth_rotation_offset,
                             sctx->map_w, sctx->map_h, &points[j].x, &points[j].y);
@@ -104,7 +113,7 @@ static void DrawPastTrack2D(const SceneContext *sctx, Satellite *sat)
         for (int j = 1; j <= segments; ++j)
         {
             if (((j / 4) & 1) != 0)
-                continue; /* dashed historical track */
+                continue;
             if (fabsf(points[j].x - points[j - 1].x) >= sctx->map_w * 0.6f)
                 continue;
             DrawLineEx((Vector2){ points[j - 1].x + x_off, points[j - 1].y },
@@ -116,8 +125,11 @@ static void DrawPastTrack2D(const SceneContext *sctx, Satellite *sat)
 
 void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
 {
-    (void)cfg;
     if (!sctx->is_2d_view || !sctx->camera2d || sctx->is_pov_mode)
+        return;
+
+    const int past_orbits = ToolSettingGetInt(cfg, PAST_ORBITS_KEY, 1);
+    if (past_orbits <= 0)
         return;
 
     Vector2 map_min = GetWorldToScreen2D((Vector2){ -sctx->map_w / 2.0f, -sctx->map_h / 2.0f }, *sctx->camera2d);
@@ -134,7 +146,7 @@ void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
     for (int i = 0; i < sat_count; ++i)
     {
         if (satellites[i].is_active)
-            DrawPastTrack2D(sctx, &satellites[i]);
+            DrawPastTrack2D(sctx, &satellites[i], past_orbits);
     }
     EndScissorMode();
 }
