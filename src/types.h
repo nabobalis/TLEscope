@@ -91,6 +91,9 @@ typedef struct
     bool show_2d_mission_labels;
     bool show_2d_footprints;
     bool show_2d_track_legend;
+    bool show_2d_coastlines;
+    bool show_2d_country_borders;
+    bool show_2d_grid;
     float orbit_cache_drift_threshold_km;  // Recalculate cache if satellite drifts more than this (default 50 km)
     bool show_clouds;
     bool show_night_lights;

@@ -2962,11 +2962,15 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             sy += 12 * cfg->ui_scale;
             DrawUIText(customFont, "2D Map", sw_x + 10 * cfg->ui_scale, sy, 16 * cfg->ui_scale, cfg->ui_accent);
             sy += 24 * cfg->ui_scale;
-            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Mission Labels", &cfg->show_2d_mission_labels);
+            float map_col2 = sw_x + 125 * cfg->ui_scale;
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Labels", &cfg->show_2d_mission_labels);
+            GuiCheckBox((Rectangle){map_col2, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Coastlines", &cfg->show_2d_coastlines);
             sy += 25 * cfg->ui_scale;
-            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Track Legend", &cfg->show_2d_track_legend);
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Legend", &cfg->show_2d_track_legend);
+            GuiCheckBox((Rectangle){map_col2, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Borders", &cfg->show_2d_country_borders);
             sy += 25 * cfg->ui_scale;
-            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Coverage Footprints", &cfg->show_2d_footprints);
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Footprints", &cfg->show_2d_footprints);
+            GuiCheckBox((Rectangle){map_col2, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Lat/Lon Grid", &cfg->show_2d_grid);
             sy += 30 * cfg->ui_scale;
 
             GuiLabel((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 90 * cfg->ui_scale, 24 * cfg->ui_scale}, "Past orbits:");
