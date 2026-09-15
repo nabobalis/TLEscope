@@ -17,27 +17,33 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: tmp-map-improvements-verify7
-      - name: Generate map detail data and patch source
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_coastline.geojson -o /tmp/coast.geojson
-          curl -fsSL https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_110m_admin_0_countries.geojson -o /tmp/countries.geojson
-          python3 - <<'PYCODE'
-          import base64, gzip
-          exec(gzip.decompress(base64.b64decode("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")))
-          PYCODE
-      - name: Install Linux build dependencies
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc make libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev libcurl4-openssl-dev
+          sudo apt-get install -y clang-format gcc make libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev libcurl4-openssl-dev
+
+      - name: Format new 2D map implementation
+        run: |
+          start=$(grep -n '^#define MAX_2D_TRACK_ORBITS 10$' src/main.c | cut -d: -f1)
+          shader=$(grep -n '^/\* \* shaders for day/night transition' src/main.c | cut -d: -f1)
+          end=$((shader - 1))
+          test -n "$start"
+          test -n "$shader"
+          clang-format -i -lines="$start:$end" src/main.c
+
       - name: Build Linux
         run: make linux
-      - name: Commit verified source
+
+      - name: Commit verified formatting
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/main.c src/types.h src/config.c src/ui.c src/map_detail_data.h
-          git commit -m "perf: improve 2D map rendering and ground tracks"
-          git push origin HEAD:tmp-map-improvements-verify7
+          if ! git diff --quiet -- src/main.c; then
+            git add src/main.c
+            git commit -m "style: format 2D map implementation"
+            git push origin HEAD:tmp-map-improvements-verify7
+          fi
 
   macos-intel:
     needs: linux
@@ -49,12 +55,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: tmp-map-improvements-verify7
+
       - name: Restore patched Raylib cache
         id: raylib-cache
         uses: actions/cache@v4
         with:
           path: .deps/raylib
           key: ${{ runner.os }}-${{ runner.arch }}-raylib-${{ env.RAYLIB_VERSION }}-macos11-glfw-mousefix-v1
+
       - name: Build patched static Raylib on cache miss
         if: steps.raylib-cache.outputs.cache-hit != 'true'
         run: |
@@ -74,10 +82,17 @@ jobs:
           mkdir -p .deps/raylib/include .deps/raylib/lib
           cp "raylib-${RAYLIB_VERSION}/src/raylib.h" "raylib-${RAYLIB_VERSION}/src/raymath.h" "raylib-${RAYLIB_VERSION}/src/rlgl.h" .deps/raylib/include/
           cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
+
       - name: Build and verify Intel app
         run: |
           test -f .deps/raylib/lib/libraylib.a
-          make app RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" MACOS_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+          make app \
+            RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" \
+            RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" \
+            MACOS_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
           file dist/TLEscope.app/Contents/MacOS/TLEscope | grep -q 'x86_64'
-          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope | grep -E '/(opt/homebrew|usr/local)/'; then exit 1; fi
+          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope | grep -E '/(opt/homebrew|usr/local)/'; then
+            echo "Found a non-system runtime dependency in the app bundle"
+            exit 1
+          fi
           codesign --verify --deep --strict dist/TLEscope.app
