@@ -51,7 +51,10 @@ jobs:
         run: make macos
 
       - name: Build app bundle
-        run: ./macos_bundle.sh
+        run: |
+          bash ./macos_bundle.sh
+          chmod +x dist/TLEscope.app/Contents/MacOS/TLEscope
+          chmod +x dist/TLEscope.app/Contents/MacOS/TLEscope.bin
 
       - name: Verify Intel architecture
         run: |
