@@ -4,11 +4,13 @@
 
 #include "tools.h"
 #include "tools_common.h"
+#include "core/astro.h"
 #include "core/theme.h"
 #include "core/config.h"
 #include "ui/labels.h"
 #include "ui/tools/tools_settings.h"
 
+#include <cmath>
 #include <raylib.h>
 
 #include "imgui.h"
@@ -19,14 +21,11 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
     (void)ctx;
 
     ImGui::PushTextWrapPos(0.0f);
-
-    /* fixed icon width so all checkboxes align vertically */
     const float icon_w = 24.0f;
 
     auto DrawLayerCheckbox = [&](const char *label, bool *value, const char *icon, const char *tooltip) {
         ImGui::PushStyleColor(ImGuiCol_Text, ThemeColor(*value ? g_theme.ui.ui_accent : g_theme.ui.text_secondary));
         ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
-        /* center the icon within a fixed-width cell so all rows align */
         ImVec2 icon_sz = ImGui::CalcTextSize(icon);
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddText(ImVec2(pos.x + (icon_w - icon_sz.x) * 0.5f, pos.y), col, icon);
@@ -34,8 +33,7 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
         ImGui::Dummy(ImVec2(icon_w, ImGui::GetFrameHeight()));
         ImGui::SameLine();
         ImGui::Checkbox(label, value);
-        if (tooltip && ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s", tooltip);
+        if (tooltip && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
     };
 
     DrawLayerCheckbox("Clouds", &cfg->show_clouds, ICON_FA_CLOUD, "Show cloud layer (C)");
@@ -50,50 +48,93 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
 
     ImGui::Separator();
 
-    /* label overlay controls (see labels.h / labels.cpp) */
     bool labels_enabled = ToolSettingGetBool(cfg, LABELS_KEY_ENABLED, true);
-    if (ImGui::Checkbox("Labels", &labels_enabled))
-        ToolSettingSetBool(cfg, LABELS_KEY_ENABLED, labels_enabled);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Show name labels for satellites and markers");
+    if (ImGui::Checkbox("Labels", &labels_enabled)) ToolSettingSetBool(cfg, LABELS_KEY_ENABLED, labels_enabled);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show name labels for satellites and markers");
 
     int label_mode = ToolSettingGetInt(cfg, LABELS_KEY_MODE, LABELS_MODE_ACTIVE_ONLY);
     const char *modes[] = { "Active only", "All", "None" };
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::Combo("##label_mode", &label_mode, modes, 3))
-        ToolSettingSetInt(cfg, LABELS_KEY_MODE, label_mode);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Which satellites get name labels");
+    if (ImGui::Combo("##label_mode", &label_mode, modes, 3)) ToolSettingSetInt(cfg, LABELS_KEY_MODE, label_mode);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Which satellites get name labels");
 
     bool show_alt = ToolSettingGetBool(cfg, LABELS_KEY_ALTITUDE, false);
-    if (ImGui::Checkbox("Label Altitude", &show_alt))
-        ToolSettingSetBool(cfg, LABELS_KEY_ALTITUDE, show_alt);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Append current altitude (km) to satellite labels");
+    if (ImGui::Checkbox("Label Altitude", &show_alt)) ToolSettingSetBool(cfg, LABELS_KEY_ALTITUDE, show_alt);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Append current altitude (km) to satellite labels");
 
     float label_size = ToolSettingGetFloat(cfg, LABELS_KEY_SIZE, 1.0f);
-    if (ImGui::SliderFloat("Label Size", &label_size, 0.5f, 1.5f, "%.2fx"))
-        ToolSettingSetFloat(cfg, LABELS_KEY_SIZE, label_size);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Scale multiplier on the UI font (1.0x = crisp native size)");
+    if (ImGui::SliderFloat("Label Size", &label_size, 0.5f, 1.5f, "%.2fx")) ToolSettingSetFloat(cfg, LABELS_KEY_SIZE, label_size);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale multiplier on the UI font (1.0x = crisp native size)");
 
     bool use_bg = ToolSettingGetBool(cfg, LABELS_KEY_BG, true);
-    if (ImGui::Checkbox("Label Background", &use_bg))
-        ToolSettingSetBool(cfg, LABELS_KEY_BG, use_bg);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Draw a dark rounded box behind label text for contrast");
+    if (ImGui::Checkbox("Label Background", &use_bg)) ToolSettingSetBool(cfg, LABELS_KEY_BG, use_bg);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw a dark rounded box behind label text for contrast");
 
     int max_count = ToolSettingGetInt(cfg, LABELS_KEY_MAX_COUNT, 200);
-    if (ImGui::SliderInt("Max Labels", &max_count, 10, 1000))
-        ToolSettingSetInt(cfg, LABELS_KEY_MAX_COUNT, max_count);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Declutter cap: how many labels are drawn before overlap rejection kicks in");
+    if (ImGui::SliderInt("Max Labels", &max_count, 10, 1000)) ToolSettingSetInt(cfg, LABELS_KEY_MAX_COUNT, max_count);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Declutter cap: how many labels are drawn before overlap rejection kicks in");
 
     ImGui::PopTextWrapPos();
 }
 
+static void DrawPastTrack2D(const SceneContext *sctx, Satellite *sat)
+{
+    if (sat->mean_motion <= 0.0)
+        return;
+
+    constexpr int segments = 400;
+    Vector2 points[segments + 1];
+    const double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
+    const double time_step = period_days / segments;
+
+    for (int j = 0; j <= segments; ++j)
+    {
+        const double t = sctx->current_epoch - (segments - j) * time_step;
+        const Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
+        get_map_coordinates(raw_pos, epoch_to_gmst(t), sctx->earth_rotation_offset,
+                            sctx->map_w, sctx->map_h, &points[j].x, &points[j].y);
+    }
+
+    Color color = (sat == sctx->active_sat) ? g_theme.world.orbit_highlighted : g_theme.world.orbit_normal;
+    color.a = (unsigned char)(color.a * 0.55f);
+
+    for (int offset = -1; offset <= 1; ++offset)
+    {
+        const float x_off = offset * sctx->map_w;
+        for (int j = 1; j <= segments; ++j)
+        {
+            if (((j / 4) & 1) != 0)
+                continue; /* dashed historical track */
+            if (fabsf(points[j].x - points[j - 1].x) >= sctx->map_w * 0.6f)
+                continue;
+            DrawLineEx((Vector2){ points[j - 1].x + x_off, points[j - 1].y },
+                       (Vector2){ points[j].x + x_off, points[j].y },
+                       2.0f / sctx->camera2d->zoom, color);
+        }
+    }
+}
+
 void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
 {
-    (void)sctx;
     (void)cfg;
+    if (!sctx->is_2d_view || !sctx->camera2d || sctx->is_pov_mode)
+        return;
+
+    Vector2 map_min = GetWorldToScreen2D((Vector2){ -sctx->map_w / 2.0f, -sctx->map_h / 2.0f }, *sctx->camera2d);
+    Vector2 map_max = GetWorldToScreen2D((Vector2){ sctx->map_w / 2.0f, sctx->map_h / 2.0f }, *sctx->camera2d);
+    int sc_x = (int)map_min.x, sc_y = (int)map_min.y;
+    int sc_w = (int)(map_max.x - map_min.x), sc_h = (int)(map_max.y - map_min.y);
+    if (sc_x < 0) { sc_w += sc_x; sc_x = 0; }
+    if (sc_y < 0) { sc_h += sc_y; sc_y = 0; }
+    if (sc_x + sc_w > GetScreenWidth()) sc_w = GetScreenWidth() - sc_x;
+    if (sc_y + sc_h > GetScreenHeight()) sc_h = GetScreenHeight() - sc_y;
+    if (sc_w <= 0 || sc_h <= 0) return;
+
+    BeginScissorMode(sc_x, sc_y, sc_w, sc_h);
+    for (int i = 0; i < sat_count; ++i)
+    {
+        if (satellites[i].is_active)
+            DrawPastTrack2D(sctx, &satellites[i]);
+    }
+    EndScissorMode();
 }
