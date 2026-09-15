@@ -77,24 +77,32 @@ jobs:
   build-macos:
     name: Build macOS Intel app
     runs-on: macos-15-intel
+    env:
+      RAYLIB_VERSION: "5.5"
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Restore patched Raylib cache
+        id: raylib-cache
+        uses: actions/cache@v4
+        with:
+          path: .deps/raylib
+          key: ${{ runner.os }}-${{ runner.arch }}-raylib-${{ env.RAYLIB_VERSION }}-macos11-glfw-mousefix-v1
+
       - name: Build static Raylib for a self-contained Intel app
-        env:
-          RAYLIB_VERSION: "5.5"
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        if: steps.raylib-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
           tar -xzf raylib.tar.gz
 
-          # Raylib 5.5 bundles GLFW 3.4.  Its Cocoa backend passes NSEvent's
+          # Raylib 5.5 bundles GLFW 3.4. Its Cocoa backend passes NSEvent's
           # buttonNumber through for "other" mouse buttons, while GLFW 3.4
           # asserts that every button is <= GLFW_MOUSE_BUTTON_LAST (7) before
-          # reaching its own bounds check.  Some macOS mice/USB receivers emit
+          # reaching its own bounds check. Some macOS mice/USB receivers emit
           # higher button numbers, which turns an otherwise ignorable event into
-          # SIGABRT.  Current GLFW removed this upper-bound assertion.  Apply
+          # SIGABRT. Current GLFW removed this upper-bound assertion. Apply
           # the same narrow fix until Raylib ships a GLFW version containing it.
           python3 - <<'PY'
           from pathlib import Path
@@ -121,9 +129,8 @@ jobs:
           cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
 
       - name: Compile and Bundle Intel .app
-        env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
         run: |
+          test -f .deps/raylib/lib/libraylib.a
           make app \
             RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" \
             RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" \
