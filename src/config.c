@@ -179,6 +179,7 @@ void LoadAppConfig(const char *filename, AppConfig *config)
     config->groundtrack_future_orbits = 2;
     config->show_2d_mission_labels = true;
     config->show_2d_footprints = false;
+    config->show_2d_track_legend = true;
 
     if (FileExists(filename))
     {
@@ -249,6 +250,7 @@ void LoadAppConfig(const char *filename, AppConfig *config)
             config->show_first_run_dialog = ParseJsonBool(text, "show_first_run_dialog", config->show_first_run_dialog);
             config->show_2d_mission_labels = ParseJsonBool(text, "show_2d_mission_labels", config->show_2d_mission_labels);
             config->show_2d_footprints = ParseJsonBool(text, "show_2d_footprints", config->show_2d_footprints);
+            config->show_2d_track_legend = ParseJsonBool(text, "show_2d_track_legend", config->show_2d_track_legend);
 
             ptr = strstr(text, "\"tle_proxy\"");
             if (ptr)
@@ -478,6 +480,7 @@ void LoadAppConfig(const char *filename, AppConfig *config)
         config->groundtrack_future_orbits = 2;
         config->show_2d_mission_labels = true;
         config->show_2d_footprints = false;
+    config->show_2d_track_legend = true;
         config->show_clouds = true;
         config->show_night_lights = true;
         config->show_markers = true;
@@ -579,6 +582,7 @@ void SaveAppConfig(const char *filename, AppConfig *config)
     fprintf(file, "    \"groundtrack_future_orbits\": %d,\n", config->groundtrack_future_orbits);
     fprintf(file, "    \"show_2d_mission_labels\": %s,\n", config->show_2d_mission_labels ? "true" : "false");
     fprintf(file, "    \"show_2d_footprints\": %s,\n", config->show_2d_footprints ? "true" : "false");
+    fprintf(file, "    \"show_2d_track_legend\": %s,\n", config->show_2d_track_legend ? "true" : "false");
     fprintf(file, "    \"show_clouds\": %s,\n", config->show_clouds ? "true" : "false");
     fprintf(file, "    \"show_night_lights\": %s,\n", config->show_night_lights ? "true" : "false");
     fprintf(file, "    \"show_markers\": %s,\n", config->show_markers ? "true" : "false");

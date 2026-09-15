@@ -90,6 +90,7 @@ typedef struct
     int groundtrack_future_orbits;
     bool show_2d_mission_labels;
     bool show_2d_footprints;
+    bool show_2d_track_legend;
     float orbit_cache_drift_threshold_km;  // Recalculate cache if satellite drifts more than this (default 50 km)
     bool show_clouds;
     bool show_night_lights;

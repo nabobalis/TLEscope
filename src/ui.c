@@ -149,6 +149,7 @@ static bool show_polar_dialog = false;
 static bool show_doppler_dialog = false;
 static bool show_tle_warning = false;
 static bool show_exit_dialog = false;
+static bool show_tle_error_dialog = false;
 static bool ui_hidden = false;
 
 /* handle taskbar in fullscreen */
@@ -530,7 +531,7 @@ static bool DownloadTLESource(CURL *curl, const char *url, FILE *out, const AppC
     else
     {
         const char *detail = curl_error[0] ? curl_error : curl_easy_strerror(res);
-        snprintf(pull_error_detail, sizeof(pull_error_detail), "%s | %s | HTTP %ld", url, detail, http_code);
+        snprintf(pull_error_detail, sizeof(pull_error_detail), "Source: %s\nError: %s\nHTTP status: %ld", url, detail, http_code);
         printf("Failed to download %s: %s (HTTP %ld)\n", url, detail, http_code);
     }
 
@@ -652,17 +653,18 @@ static void PullTLEData(AppConfig *cfg)
 {
     if (pull_state == PULL_BUSY) return;
     pull_error_detail[0] = '\0';
+    show_tle_error_dialog = false;
     pull_state = PULL_BUSY;
     pull_partial = false;
     pull_cfg = cfg;
 
 #if defined(_WIN32) || defined(_WIN64)
     uintptr_t h = _beginthread(PullTLEThreadWin, 0, NULL);
-    if (h == (uintptr_t)-1L) { pull_state = PULL_ERROR; return; }
+    if (h == (uintptr_t)-1L) { snprintf(pull_error_detail, sizeof(pull_error_detail), "Could not start the TLE download thread"); pull_state = PULL_ERROR; return; }
     pull_thread = (HANDLE)h;
 #else
     if (pthread_create(&pull_thread, NULL, PullTLEThread, NULL) != 0)
-    { pull_state = PULL_ERROR; return; }
+    { snprintf(pull_error_detail, sizeof(pull_error_detail), "Could not start the TLE download thread"); pull_state = PULL_ERROR; return; }
     pthread_detach(pull_thread);
 #endif
 }
@@ -692,6 +694,11 @@ static void FinishPullIfDone(UIContext *ctx, AppConfig *cfg)
         }
         LoadSatSelection();
         data_tle_epoch = time(NULL);
+        pull_state = PULL_IDLE;
+    }
+    else if (pull_state == PULL_ERROR)
+    {
+        show_tle_error_dialog = true;
         pull_state = PULL_IDLE;
     }
 }
@@ -800,6 +807,50 @@ static float GetButtonBottomY(float ui_scale)
 }
 
 void DrawUIText(Font font, const char *text, float x, float y, float size, Color color) { DrawTextEx(font, text, (Vector2){x, y}, size, 1.0f, color); }
+
+
+static void DrawWrappedUIText(Font font, const char *text, Rectangle bounds, float size, Color color)
+{
+    if (!text || bounds.width <= 0 || bounds.height <= 0) return;
+    char line[512];
+    int len = 0;
+    float y = bounds.y;
+    float line_height = size + 3.0f;
+
+    for (const char *p = text; ; p++)
+    {
+        char c = *p;
+        bool flush = (c == '\n' || c == '\0');
+        if (!flush && len < (int)sizeof(line) - 2)
+        {
+            line[len++] = c;
+            line[len] = '\0';
+            if (MeasureTextEx(font, line, size, 1.0f).x > bounds.width && len > 1)
+            {
+                char carry = line[--len];
+                line[len] = '\0';
+                if (y + size > bounds.y + bounds.height) return;
+                DrawTextEx(font, line, (Vector2){bounds.x, y}, size, 1.0f, color);
+                y += line_height;
+                line[0] = carry;
+                line[1] = '\0';
+                len = 1;
+            }
+        }
+        if (flush)
+        {
+            if (len > 0)
+            {
+                if (y + size > bounds.y + bounds.height) return;
+                DrawTextEx(font, line, (Vector2){bounds.x, y}, size, 1.0f, color);
+                y += line_height;
+                len = 0;
+                line[0] = '\0';
+            }
+            if (c == '\0') break;
+        }
+    }
+}
 
 double StepTimeMultiplier(double current, bool increase)
 {
@@ -989,9 +1040,9 @@ void ToggleTLEWarning(void) { show_tle_warning = !show_tle_warning; }
 
 bool IsMouseOverUI(AppConfig *cfg)
 {
-    if (ui_hidden && !show_exit_dialog && !cfg->show_first_run_dialog)
+    if (ui_hidden && !show_exit_dialog && !show_tle_error_dialog && !cfg->show_first_run_dialog)
         return false;
-    if (show_exit_dialog || cfg->show_first_run_dialog)
+    if (show_exit_dialog || show_tle_error_dialog || cfg->show_first_run_dialog)
         return true;
     if (!ui_initialized)
     {
@@ -1624,8 +1675,8 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
     *ctx->scope_el = scope_el;
     *ctx->scope_beam = scope_beam;
 
-    // Keep first-run and exit confirmation dialogs reachable even in clean view.
-    if (ui_hidden && !show_exit_dialog && !cfg->show_first_run_dialog)
+    // Keep modal dialogs reachable even in clean view.
+    if (ui_hidden && !show_exit_dialog && !show_tle_error_dialog && !cfg->show_first_run_dialog)
         return;
 
     if (*ctx->selected_sat != last_selected_sat)
@@ -2406,23 +2457,9 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             GuiLabel((Rectangle){tm_x + 10 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, 50 * cfg->ui_scale, 24 * cfg->ui_scale}, "Proxy:");
             AdvancedTextBox((Rectangle){tm_x + 62 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, tmMgrWindow.width - 132 * cfg->ui_scale, 24 * cfg->ui_scale},
                             cfg->tle_proxy, sizeof(cfg->tle_proxy), &edit_tle_proxy, false);
-            GuiSetTooltip("Optional proxy URL, e.g. http://proxy.example:8080. Leave blank for libcurl defaults/environment.");
+            GuiSetTooltip("Optional proxy URL, e.g. http://proxy.example:8080. Leave blank to use the normal network settings.");
             if (GuiButton((Rectangle){tm_x + tmMgrWindow.width - 62 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, 52 * cfg->ui_scale, 24 * cfg->ui_scale}, "Save"))
                 SaveAppConfig("settings.json", cfg);
-
-            if (pull_error_detail[0] != '\0')
-            {
-                char short_error[80];
-                size_t err_len = strlen(pull_error_detail);
-                snprintf(short_error, sizeof(short_error), "%.68s%s", pull_error_detail, err_len > 68 ? "..." : "");
-                DrawUIText(customFont, short_error, tm_x + 10 * cfg->ui_scale, tm_y + 96 * cfg->ui_scale, 12 * cfg->ui_scale, (Color){235, 110, 110, 255});
-                if (GuiButton((Rectangle){tm_x + tmMgrWindow.width - 62 * cfg->ui_scale, tm_y + 92 * cfg->ui_scale, 52 * cfg->ui_scale, 22 * cfg->ui_scale}, "Copy"))
-                    SetClipboardText(pull_error_detail);
-            }
-            else
-            {
-                DrawUIText(customFont, "Proxy blank = libcurl environment/direct connection", tm_x + 10 * cfg->ui_scale, tm_y + 96 * cfg->ui_scale, 12 * cfg->ui_scale, cfg->text_secondary);
-            }
 
             float total_height = 28 * cfg->ui_scale + (retlector_expanded ? NUM_RETLECTOR_SOURCES * 25 * cfg->ui_scale : 0);
             total_height += 28 * cfg->ui_scale + (celestrak_expanded ? 25 * 25 * cfg->ui_scale : 0);
@@ -2441,7 +2478,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             GuiSetStyle(LISTVIEW, BORDER_COLOR_FOCUSED, ColorToInt(cfg->window_border_focus));
             GuiSetStyle(LISTVIEW, BORDER_COLOR_PRESSED, ColorToInt(cfg->window_border_focus));
 
-            GuiScrollPanel((Rectangle){tm_x + 8 * cfg->ui_scale, tm_y + 122 * cfg->ui_scale, tmMgrWindow.width - 16 * cfg->ui_scale, tmMgrWindow.height - 122 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &tle_mgr_scroll, &viewRec);
+            GuiScrollPanel((Rectangle){tm_x + 8 * cfg->ui_scale, tm_y + 96 * cfg->ui_scale, tmMgrWindow.width - 16 * cfg->ui_scale, tmMgrWindow.height - 96 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &tle_mgr_scroll, &viewRec);
 
             GuiSetStyle(DEFAULT, BORDER_COLOR_FOCUSED, oldFocusD);
             GuiSetStyle(DEFAULT, BORDER_COLOR_PRESSED, oldPressD);
@@ -2926,6 +2963,8 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             DrawUIText(customFont, "2D Map", sw_x + 10 * cfg->ui_scale, sy, 16 * cfg->ui_scale, cfg->ui_accent);
             sy += 24 * cfg->ui_scale;
             GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Mission Labels", &cfg->show_2d_mission_labels);
+            sy += 25 * cfg->ui_scale;
+            GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Track Legend", &cfg->show_2d_track_legend);
             sy += 25 * cfg->ui_scale;
             GuiCheckBox((Rectangle){sw_x + 10 * cfg->ui_scale, sy, 20 * cfg->ui_scale, 20 * cfg->ui_scale}, "Coverage Footprints", &cfg->show_2d_footprints);
             sy += 30 * cfg->ui_scale;
@@ -4519,6 +4558,28 @@ case WND_SCOPE:
 
     if (rot_connected)
         RotatorDrawConnectedItem(cfg, customFont, cur_x, y);
+
+
+    if (show_tle_error_dialog)
+    {
+        DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ApplyAlpha(cfg->overlay_dim, 150.0f / 180.0f));
+        float ew = fminf(520.0f * cfg->ui_scale, fmaxf(260.0f, (float)GetScreenWidth() - 24.0f));
+        float eh = fminf(240.0f * cfg->ui_scale, fmaxf(170.0f, (float)GetScreenHeight() - 24.0f));
+        Rectangle errorRec = {(GetScreenWidth() - ew) / 2.0f, (GetScreenHeight() - eh) / 2.0f, ew, eh};
+        if (DrawMaterialWindow(errorRec, "TLE Download Error", cfg, customFont, true))
+            show_tle_error_dialog = false;
+
+        float dialog_scale = fminf(cfg->ui_scale, fmaxf(0.75f, ew / 520.0f));
+        DrawUIText(customFont, "The TLE refresh failed. Your existing TLE data was kept.",
+                   errorRec.x + 14.0f, errorRec.y + 42.0f, 12.0f * dialog_scale, cfg->text_main);
+        Rectangle detailRec = {errorRec.x + 14.0f, errorRec.y + 66.0f,
+                               errorRec.width - 28.0f, errorRec.height - 116.0f};
+        DrawWrappedUIText(customFont, pull_error_detail[0] ? pull_error_detail : "Unknown download error",
+                          detailRec, 11.0f * dialog_scale, (Color){235, 110, 110, 255});
+        if (GuiButton((Rectangle){errorRec.x + errorRec.width - 92.0f, errorRec.y + errorRec.height - 38.0f,
+                                  78.0f, 26.0f}, "Close"))
+            show_tle_error_dialog = false;
+    }
 
     if (show_exit_dialog)
     {

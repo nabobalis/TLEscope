@@ -1766,35 +1766,43 @@ int main(void)
 
             EndMode2D();
 
-            /* Screen-space legend: make past/NOW/future semantics explicit. */
+            /* Compact, responsive 2D ground-track legend. */
+            if (cfg.show_2d_track_legend)
             {
-                float lx = 18.0f * cfg.ui_scale;
-                float ly = 55.0f * cfg.ui_scale;
-                float lw = 320.0f * cfg.ui_scale;
-                float lh = 72.0f * cfg.ui_scale;
+                float screen_w = (float)GetScreenWidth();
+                float legend_scale = fminf(cfg.ui_scale, fmaxf(0.72f, screen_w / 640.0f));
+                float margin = 8.0f * legend_scale;
+                float lx = margin;
+                float ly = 48.0f * legend_scale;
+                float lw = fminf(268.0f * legend_scale, screen_w - 2.0f * margin);
+                float lh = 62.0f * legend_scale;
+
                 DrawRectangleRounded((Rectangle){lx, ly, lw, lh}, 0.08f, 6, ApplyAlpha(cfg.ui_bg, 0.85f));
                 DrawRectangleRoundedLinesEx((Rectangle){lx, ly, lw, lh}, 0.08f, 6, 1.0f, ApplyAlpha(cfg.ui_secondary, 0.7f));
-                DrawUIText(customFont, TextFormat("2D ground tracks: %d past / %d future orbits",
-                           cfg.groundtrack_past_orbits, cfg.groundtrack_future_orbits),
-                           lx + 10.0f * cfg.ui_scale, ly + 8.0f * cfg.ui_scale,
-                           14.0f * cfg.ui_scale, cfg.text_main);
+                DrawUIText(customFont, TextFormat("Tracks: %d past / %d future", cfg.groundtrack_past_orbits, cfg.groundtrack_future_orbits),
+                           lx + 8.0f * legend_scale, ly + 6.0f * legend_scale,
+                           11.0f * legend_scale, cfg.text_main);
 
-                float line_y = ly + 45.0f * cfg.ui_scale;
+                float line_y = ly + 31.0f * legend_scale;
+                float label_y = ly + 43.0f * legend_scale;
+                float centers[3] = {lx + lw / 6.0f, lx + lw / 2.0f, lx + 5.0f * lw / 6.0f};
                 Color key = cfg.text_main;
-                for (int d = 0; d < 4; d++)
-                    DrawLineEx((Vector2){lx + (10 + d * 8) * cfg.ui_scale, line_y},
-                               (Vector2){lx + (14 + d * 8) * cfg.ui_scale, line_y},
-                               2.0f * cfg.ui_scale, ApplyAlpha(key, 0.5f));
-                DrawUIText(customFont, "PAST", lx + 47.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
-                           12.0f * cfg.ui_scale, cfg.text_secondary);
-                DrawCircleV((Vector2){lx + 115.0f * cfg.ui_scale, line_y}, 4.0f * cfg.ui_scale, key);
-                DrawUIText(customFont, "NOW", lx + 125.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
-                           12.0f * cfg.ui_scale, cfg.text_main);
-                DrawLineEx((Vector2){lx + 178.0f * cfg.ui_scale, line_y},
-                           (Vector2){lx + 218.0f * cfg.ui_scale, line_y},
-                           2.0f * cfg.ui_scale, key);
-                DrawUIText(customFont, "FUTURE", lx + 226.0f * cfg.ui_scale, line_y - 7.0f * cfg.ui_scale,
-                           12.0f * cfg.ui_scale, cfg.text_main);
+                for (int d = 0; d < 3; d++)
+                    DrawLineEx((Vector2){centers[0] - (15 - d * 10) * legend_scale, line_y},
+                               (Vector2){centers[0] - (9 - d * 10) * legend_scale, line_y},
+                               2.0f * legend_scale, ApplyAlpha(key, 0.5f));
+                DrawCircleV((Vector2){centers[1], line_y}, 3.5f * legend_scale, key);
+                DrawLineEx((Vector2){centers[2] - 16.0f * legend_scale, line_y},
+                           (Vector2){centers[2] + 16.0f * legend_scale, line_y},
+                           2.0f * legend_scale, key);
+
+                const char *labels[3] = {"PAST", "NOW", "FUTURE"};
+                for (int i = 0; i < 3; i++)
+                {
+                    Vector2 size = MeasureTextEx(customFont, labels[i], 9.0f * legend_scale, 1.0f);
+                    DrawUIText(customFont, labels[i], centers[i] - size.x * 0.5f, label_y,
+                               9.0f * legend_scale, i == 0 ? cfg.text_secondary : cfg.text_main);
+                }
             }
         }
         else
