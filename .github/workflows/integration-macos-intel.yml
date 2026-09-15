@@ -1,0 +1,52 @@
+name: Integration macOS Intel
+
+on:
+  push:
+    branches:
+      - integration/extremelywip-all-features
+  workflow_dispatch:
+
+jobs:
+  macos-intel:
+    runs-on: macos-15-intel
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build portable macOS binary
+        run: make macos
+
+      - name: Build app bundle
+        run: ./macos_bundle.sh
+
+      - name: Verify Intel architecture
+        run: |
+          file dist/TLEscope.app/Contents/MacOS/TLEscope.bin
+          file dist/TLEscope.app/Contents/MacOS/TLEscope.bin | grep -q 'x86_64'
+
+      - name: Verify runtime dependencies
+        run: |
+          otool -L dist/TLEscope.app/Contents/MacOS/TLEscope.bin
+          if otool -L dist/TLEscope.app/Contents/MacOS/TLEscope.bin | grep -E '/opt/homebrew|/usr/local'; then
+            echo 'Unexpected Homebrew runtime dependency in app binary' >&2
+            exit 1
+          fi
+
+      - name: Ad-hoc sign and verify bundle
+        run: |
+          codesign --force --deep --sign - dist/TLEscope.app
+          codesign --verify --deep --strict dist/TLEscope.app
+
+      - name: Package app bundle
+        run: ditto -c -k --sequesterRsrc --keepParent dist/TLEscope.app TLEscope-macOS-Intel.zip
+
+      - name: Upload Intel app
+        uses: actions/upload-artifact@v4
+        with:
+          name: TLEscope-integration-macOS-Intel
+          path: TLEscope-macOS-Intel.zip
+          retention-days: 14
