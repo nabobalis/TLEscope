@@ -26,11 +26,13 @@ jobs:
           needle = '    config->show_2d_footprints = false;\n'
           if s.count(needle) != 2:
               raise SystemExit(f'unexpected default count: {s.count(needle)}')
-          s = s.replace(needle, needle + '    config->show_2d_track_legend = true;\n', 1)
+          s = s.replace(needle, '    config->show_2d_footprints = false; /* prepared */\n    config->show_2d_track_legend = true;\n', 1)
           p.write_text(s)
           PY
       - name: Apply UI patch
         run: python3 .github/apply-ui-polish.py
+      - name: Finalize config defaults
+        run: sed -i 's/show_2d_footprints = false; \/\* prepared \*\//show_2d_footprints = false;/' src/config.c
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -63,11 +65,13 @@ jobs:
           needle = '    config->show_2d_footprints = false;\n'
           if s.count(needle) != 2:
               raise SystemExit(f'unexpected default count: {s.count(needle)}')
-          s = s.replace(needle, needle + '    config->show_2d_track_legend = true;\n', 1)
+          s = s.replace(needle, '    config->show_2d_footprints = false; /* prepared */\n    config->show_2d_track_legend = true;\n', 1)
           p.write_text(s)
           PY
       - name: Apply UI patch
         run: python3 .github/apply-ui-polish.py
+      - name: Finalize config defaults
+        run: sed -i '' 's/show_2d_footprints = false; \/\* prepared \*\//show_2d_footprints = false;/' src/config.c
       - name: Restore patched Raylib cache
         id: raylib-cache
         uses: actions/cache@v4
