@@ -52,240 +52,238 @@ static const char* GetAssetPath(const char* theme, const char* filename) {
 #define GROUNDTRACK_CACHE_SIM_SECONDS 3.0
 #define GROUNDTRACK_CACHE_MIN_REAL_SECONDS 0.5
 
-typedef struct
-{
-    bool valid;
-    int sat_index;
-    int past_orbits;
-    int future_orbits;
-    int past_segments;
-    int future_segments;
-    int segments;
-    int segments_per_orbit;
-    bool highlight_sunlit;
-    float earth_rotation_offset;
-    float map_w;
-    float map_h;
-    double sat_epoch_unix;
-    double mean_motion;
-    double center_epoch;
-    double last_build_wall;
-    unsigned long last_used;
-    Vector2 points[MAX_2D_TRACK_SEGMENTS + 1];
-    unsigned char sunlit[MAX_2D_TRACK_SEGMENTS + 1];
+typedef struct {
+  bool valid;
+  int sat_index;
+  int past_orbits;
+  int future_orbits;
+  int past_segments;
+  int future_segments;
+  int segments;
+  int segments_per_orbit;
+  bool highlight_sunlit;
+  float earth_rotation_offset;
+  float map_w;
+  float map_h;
+  double sat_epoch_unix;
+  double mean_motion;
+  double center_epoch;
+  double last_build_wall;
+  unsigned long last_used;
+  Vector2 points[MAX_2D_TRACK_SEGMENTS + 1];
+  unsigned char sunlit[MAX_2D_TRACK_SEGMENTS + 1];
 } GroundTrack2DCache;
 
 static GroundTrack2DCache groundtrack_cache[GROUNDTRACK_CACHE_SLOTS] = {0};
 static unsigned long groundtrack_cache_clock = 0;
 
-static int Clamp2DTrackOrbits(int count)
-{
-    if (count < 0) return 0;
-    if (count > MAX_2D_TRACK_ORBITS) return MAX_2D_TRACK_ORBITS;
-    return count;
+static int Clamp2DTrackOrbits(int count) {
+  if (count < 0)
+    return 0;
+  if (count > MAX_2D_TRACK_ORBITS)
+    return MAX_2D_TRACK_ORBITS;
+  return count;
 }
 
-static int Get2DTrackSegmentsPerOrbit(float zoom)
-{
-    if (zoom < 0.80f) return TRACK_SEGMENTS_LOW;
-    if (zoom > 1.80f) return TRACK_SEGMENTS_HIGH;
-    return TRACK_SEGMENTS_NORMAL;
+static int Get2DTrackSegmentsPerOrbit(float zoom) {
+  if (zoom < 0.80f)
+    return TRACK_SEGMENTS_LOW;
+  if (zoom > 1.80f)
+    return TRACK_SEGMENTS_HIGH;
+  return TRACK_SEGMENTS_NORMAL;
 }
 
-static float Get2DMapFitZoom(float map_w, float map_h)
-{
-    float usable_w = fmaxf(100.0f, (float)GetScreenWidth() - 32.0f);
-    float usable_h = fmaxf(100.0f, (float)GetScreenHeight() - 32.0f);
-    float fit = fminf(usable_w / map_w, usable_h / map_h);
-    return fmaxf(0.10f, fit);
+static float Get2DMapFitZoom(float map_w, float map_h) {
+  float usable_w = fmaxf(100.0f, (float)GetScreenWidth() - 32.0f);
+  float usable_h = fmaxf(100.0f, (float)GetScreenHeight() - 32.0f);
+  float fit = fminf(usable_w / map_w, usable_h / map_h);
+  return fmaxf(0.10f, fit);
 }
 
-static Vector2 MapDetailToWorld(MapDetailPoint p, float map_w, float map_h)
-{
-    float lon = (float)p.lon100 / 100.0f;
-    float lat = (float)p.lat100 / 100.0f;
-    return (Vector2){(lon / 360.0f) * map_w, -(lat / 180.0f) * map_h};
+static Vector2 MapDetailToWorld(MapDetailPoint p, float map_w, float map_h) {
+  float lon = (float)p.lon100 / 100.0f;
+  float lat = (float)p.lat100 / 100.0f;
+  return (Vector2){(lon / 360.0f) * map_w, -(lat / 180.0f) * map_h};
 }
 
-static void DrawMapDetailLines(const MapDetailPoint *points, const MapDetailLine *lines,
-                     int line_count, float map_w, float map_h, float zoom,
-                     float width_px, Color color)
-{
-    float width = width_px / fmaxf(zoom, 0.10f);
-    for (int i = 0; i < line_count; i++)
-    {
-        int start = lines[i].start;
-        int count = lines[i].count;
-        for (int j = 1; j < count; j++)
-        {
-  Vector2 a = MapDetailToWorld(points[start + j - 1], map_w, map_h);
-  Vector2 b = MapDetailToWorld(points[start + j], map_w, map_h);
-  if (fabsf(a.x - b.x) > map_w * 0.45f) continue;
-  DrawLineEx(a, b, width, color);
-        }
+static void DrawMapDetailLines(const MapDetailPoint *points,
+                               const MapDetailLine *lines, int line_count,
+                               float map_w, float map_h, float zoom,
+                               float width_px, Color color) {
+  float width = width_px / fmaxf(zoom, 0.10f);
+  for (int i = 0; i < line_count; i++) {
+    int start = lines[i].start;
+    int count = lines[i].count;
+    for (int j = 1; j < count; j++) {
+      Vector2 a = MapDetailToWorld(points[start + j - 1], map_w, map_h);
+      Vector2 b = MapDetailToWorld(points[start + j], map_w, map_h);
+      if (fabsf(a.x - b.x) > map_w * 0.45f)
+        continue;
+      DrawLineEx(a, b, width, color);
     }
+  }
 }
 
-static void Draw2DMapDetails(const AppConfig *cfg, float map_w, float map_h, float zoom)
-{
-    if (cfg->show_2d_grid)
-    {
-        float thin = 0.8f / fmaxf(zoom, 0.10f);
-        float strong = 1.1f / fmaxf(zoom, 0.10f);
-        for (int lon = -150; lon <= 150; lon += 30)
-        {
-  float x = ((float)lon / 360.0f) * map_w;
-  DrawLineEx((Vector2){x, -map_h * 0.5f}, (Vector2){x, map_h * 0.5f},
-             lon == 0 ? strong : thin,
-             ApplyAlpha(cfg->text_main, lon == 0 ? 0.28f : 0.15f));
-        }
-        for (int lat = -60; lat <= 60; lat += 30)
-        {
-  float y = -((float)lat / 180.0f) * map_h;
-  DrawLineEx((Vector2){-map_w * 0.5f, y}, (Vector2){map_w * 0.5f, y},
-             lat == 0 ? strong : thin,
-             ApplyAlpha(cfg->text_main, lat == 0 ? 0.28f : 0.15f));
-        }
+static void Draw2DMapDetails(const AppConfig *cfg, float map_w, float map_h,
+                             float zoom) {
+  if (cfg->show_2d_grid) {
+    float thin = 0.8f / fmaxf(zoom, 0.10f);
+    float strong = 1.1f / fmaxf(zoom, 0.10f);
+    for (int lon = -150; lon <= 150; lon += 30) {
+      float x = ((float)lon / 360.0f) * map_w;
+      DrawLineEx((Vector2){x, -map_h * 0.5f}, (Vector2){x, map_h * 0.5f},
+                 lon == 0 ? strong : thin,
+                 ApplyAlpha(cfg->text_main, lon == 0 ? 0.28f : 0.15f));
     }
+    for (int lat = -60; lat <= 60; lat += 30) {
+      float y = -((float)lat / 180.0f) * map_h;
+      DrawLineEx((Vector2){-map_w * 0.5f, y}, (Vector2){map_w * 0.5f, y},
+                 lat == 0 ? strong : thin,
+                 ApplyAlpha(cfg->text_main, lat == 0 ? 0.28f : 0.15f));
+    }
+  }
 
-    if (cfg->show_2d_country_borders)
-        DrawMapDetailLines(MAP_BORDER_POINTS, MAP_BORDER_LINES, MAP_BORDER_LINE_COUNT,
-                 map_w, map_h, zoom, 0.8f, ApplyAlpha(cfg->text_main, 0.20f));
-    if (cfg->show_2d_coastlines)
-        DrawMapDetailLines(MAP_COAST_POINTS, MAP_COAST_LINES, MAP_COAST_LINE_COUNT,
-                 map_w, map_h, zoom, 1.15f, ApplyAlpha(cfg->text_main, 0.58f));
+  if (cfg->show_2d_country_borders)
+    DrawMapDetailLines(MAP_BORDER_POINTS, MAP_BORDER_LINES,
+                       MAP_BORDER_LINE_COUNT, map_w, map_h, zoom, 0.8f,
+                       ApplyAlpha(cfg->text_main, 0.20f));
+  if (cfg->show_2d_coastlines)
+    DrawMapDetailLines(MAP_COAST_POINTS, MAP_COAST_LINES, MAP_COAST_LINE_COUNT,
+                       map_w, map_h, zoom, 1.15f,
+                       ApplyAlpha(cfg->text_main, 0.58f));
 }
 
-static GroundTrack2DCache *AcquireGroundTrack2DCache(Satellite *sat)
-{
-    int sat_index = (int)(sat - satellites);
-    GroundTrack2DCache *slot = NULL;
-    for (int i = 0; i < GROUNDTRACK_CACHE_SLOTS; i++)
-    {
-        if (groundtrack_cache[i].valid && groundtrack_cache[i].sat_index == sat_index)
-        {
-  slot = &groundtrack_cache[i];
-  break;
-        }
-    }
-    if (!slot)
-    {
-        for (int i = 0; i < GROUNDTRACK_CACHE_SLOTS; i++)
-        {
-  if (!groundtrack_cache[i].valid)
-  {
+static GroundTrack2DCache *AcquireGroundTrack2DCache(Satellite *sat) {
+  int sat_index = (int)(sat - satellites);
+  GroundTrack2DCache *slot = NULL;
+  for (int i = 0; i < GROUNDTRACK_CACHE_SLOTS; i++) {
+    if (groundtrack_cache[i].valid &&
+        groundtrack_cache[i].sat_index == sat_index) {
       slot = &groundtrack_cache[i];
       break;
+    }
   }
-        }
+  if (!slot) {
+    for (int i = 0; i < GROUNDTRACK_CACHE_SLOTS; i++) {
+      if (!groundtrack_cache[i].valid) {
+        slot = &groundtrack_cache[i];
+        break;
+      }
     }
-    if (!slot)
-    {
-        int oldest = 0;
-        for (int i = 1; i < GROUNDTRACK_CACHE_SLOTS; i++)
-  if (groundtrack_cache[i].last_used < groundtrack_cache[oldest].last_used) oldest = i;
-        slot = &groundtrack_cache[oldest];
-    }
-    if (!slot->valid || slot->sat_index != sat_index)
-    {
-        memset(slot, 0, sizeof(*slot));
-        slot->sat_index = sat_index;
-    }
-    slot->last_used = ++groundtrack_cache_clock;
-    return slot;
+  }
+  if (!slot) {
+    int oldest = 0;
+    for (int i = 1; i < GROUNDTRACK_CACHE_SLOTS; i++)
+      if (groundtrack_cache[i].last_used < groundtrack_cache[oldest].last_used)
+        oldest = i;
+    slot = &groundtrack_cache[oldest];
+  }
+  if (!slot->valid || slot->sat_index != sat_index) {
+    memset(slot, 0, sizeof(*slot));
+    slot->sat_index = sat_index;
+  }
+  slot->last_used = ++groundtrack_cache_clock;
+  return slot;
 }
 
 static void RebuildGroundTrack2DCache(GroundTrack2DCache *cache, Satellite *sat,
-                            const AppConfig *cfg, double current_epoch,
-                            float map_w, float map_h, int past_orbits,
-                            int future_orbits, int segments_per_orbit)
-{
-    cache->past_orbits = past_orbits;
-    cache->future_orbits = future_orbits;
-    cache->segments_per_orbit = segments_per_orbit;
-    cache->past_segments = past_orbits * segments_per_orbit;
-    cache->future_segments = future_orbits * segments_per_orbit;
-    cache->segments = cache->past_segments + cache->future_segments;
-    cache->highlight_sunlit = cfg->highlight_sunlit;
-    cache->earth_rotation_offset = cfg->earth_rotation_offset;
-    cache->map_w = map_w;
-    cache->map_h = map_h;
-    cache->sat_epoch_unix = sat->epoch_unix;
-    cache->mean_motion = sat->mean_motion;
-    cache->center_epoch = current_epoch;
-    cache->last_build_wall = GetTime();
+                                      const AppConfig *cfg,
+                                      double current_epoch, float map_w,
+                                      float map_h, int past_orbits,
+                                      int future_orbits,
+                                      int segments_per_orbit) {
+  cache->past_orbits = past_orbits;
+  cache->future_orbits = future_orbits;
+  cache->segments_per_orbit = segments_per_orbit;
+  cache->past_segments = past_orbits * segments_per_orbit;
+  cache->future_segments = future_orbits * segments_per_orbit;
+  cache->segments = cache->past_segments + cache->future_segments;
+  cache->highlight_sunlit = cfg->highlight_sunlit;
+  cache->earth_rotation_offset = cfg->earth_rotation_offset;
+  cache->map_w = map_w;
+  cache->map_h = map_h;
+  cache->sat_epoch_unix = sat->epoch_unix;
+  cache->mean_motion = sat->mean_motion;
+  cache->center_epoch = current_epoch;
+  cache->last_build_wall = GetTime();
 
-    double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
-    double time_step = period_days / segments_per_orbit;
-    Vector3 sun_dir = {0};
-    if (cfg->highlight_sunlit)
-        sun_dir = Vector3Normalize(calculate_sun_position(current_epoch));
+  double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
+  double time_step = period_days / segments_per_orbit;
+  Vector3 sun_dir = {0};
+  if (cfg->highlight_sunlit)
+    sun_dir = Vector3Normalize(calculate_sun_position(current_epoch));
 
-    for (int j = 0; j <= cache->segments; j++)
-    {
-        int offset_segments = j - cache->past_segments;
-        double t = current_epoch + offset_segments * time_step;
-        Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
-        get_map_coordinates(raw_pos, epoch_to_gmst(t), cfg->earth_rotation_offset,
-                  map_w, map_h, &cache->points[j].x, &cache->points[j].y);
-        cache->sunlit[j] = cfg->highlight_sunlit ? !is_sat_eclipsed(raw_pos, sun_dir) : 1;
+  for (int j = 0; j <= cache->segments; j++) {
+    int offset_segments = j - cache->past_segments;
+    double t = current_epoch + offset_segments * time_step;
+    Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
+    get_map_coordinates(raw_pos, epoch_to_gmst(t), cfg->earth_rotation_offset,
+                        map_w, map_h, &cache->points[j].x, &cache->points[j].y);
+    cache->sunlit[j] =
+        cfg->highlight_sunlit ? !is_sat_eclipsed(raw_pos, sun_dir) : 1;
+  }
+  cache->valid = true;
+}
+
+static GroundTrack2DCache *
+GetGroundTrack2DCache(Satellite *sat, const AppConfig *cfg,
+                      double current_epoch, float map_w, float map_h,
+                      float zoom, int past_orbits, int future_orbits) {
+  GroundTrack2DCache *cache = AcquireGroundTrack2DCache(sat);
+  int segments_per_orbit = Get2DTrackSegmentsPerOrbit(zoom);
+  double sim_delta_seconds =
+      cache->valid ? fabs(current_epoch - cache->center_epoch) * 86400.0 : 1e30;
+  double real_delta_seconds =
+      cache->valid ? GetTime() - cache->last_build_wall : 1e30;
+  bool structure_changed = !cache->valid || cache->past_orbits != past_orbits ||
+                           cache->future_orbits != future_orbits ||
+                           cache->segments_per_orbit != segments_per_orbit ||
+                           cache->highlight_sunlit != cfg->highlight_sunlit ||
+                           fabsf(cache->earth_rotation_offset -
+                                 cfg->earth_rotation_offset) > 0.0001f ||
+                           cache->map_w != map_w || cache->map_h != map_h ||
+                           cache->sat_epoch_unix != sat->epoch_unix ||
+                           cache->mean_motion != sat->mean_motion;
+  bool time_changed = sim_delta_seconds >= GROUNDTRACK_CACHE_SIM_SECONDS &&
+                      real_delta_seconds >= GROUNDTRACK_CACHE_MIN_REAL_SECONDS;
+  if (structure_changed || time_changed)
+    RebuildGroundTrack2DCache(cache, sat, cfg, current_epoch, map_w, map_h,
+                              past_orbits, future_orbits, segments_per_orbit);
+  return cache;
+}
+
+static void DrawGroundTrack2D(Satellite *sat, const AppConfig *cfg,
+                              double current_epoch, float map_w, float map_h,
+                              float zoom, float alpha, bool highlighted,
+                              Color track_color, int past_orbits,
+                              int future_orbits) {
+  past_orbits = Clamp2DTrackOrbits(past_orbits);
+  future_orbits = Clamp2DTrackOrbits(future_orbits);
+  if (past_orbits + future_orbits <= 0)
+    return;
+
+  GroundTrack2DCache *cache = GetGroundTrack2DCache(
+      sat, cfg, current_epoch, map_w, map_h, zoom, past_orbits, future_orbits);
+  for (int offset_i = -1; offset_i <= 1; offset_i++) {
+    float x_off = offset_i * map_w;
+    for (int j = 1; j <= cache->segments; j++) {
+      bool is_past = (j <= cache->past_segments);
+      if (is_past && j != cache->past_segments && ((j / 3) % 2) != 0)
+        continue;
+      if (fabsf(cache->points[j].x - cache->points[j - 1].x) >= map_w * 0.6f)
+        continue;
+
+      float time_alpha = is_past ? 0.45f : 0.95f;
+      if (cfg->highlight_sunlit && !cache->sunlit[j])
+        time_alpha *= 0.45f;
+      DrawLineEx(
+          (Vector2){cache->points[j - 1].x + x_off, cache->points[j - 1].y},
+          (Vector2){cache->points[j].x + x_off, cache->points[j].y},
+          (highlighted ? 2.6f : 1.7f) / fmaxf(zoom, 0.10f),
+          ApplyAlpha(track_color, alpha * time_alpha));
     }
-    cache->valid = true;
+  }
 }
-
-static GroundTrack2DCache *GetGroundTrack2DCache(Satellite *sat, const AppConfig *cfg,
-                                       double current_epoch, float map_w, float map_h,
-                                       float zoom, int past_orbits, int future_orbits)
-{
-    GroundTrack2DCache *cache = AcquireGroundTrack2DCache(sat);
-    int segments_per_orbit = Get2DTrackSegmentsPerOrbit(zoom);
-    double sim_delta_seconds = cache->valid ? fabs(current_epoch - cache->center_epoch) * 86400.0 : 1e30;
-    double real_delta_seconds = cache->valid ? GetTime() - cache->last_build_wall : 1e30;
-    bool structure_changed = !cache->valid ||
-        cache->past_orbits != past_orbits || cache->future_orbits != future_orbits ||
-        cache->segments_per_orbit != segments_per_orbit ||
-        cache->highlight_sunlit != cfg->highlight_sunlit ||
-        fabsf(cache->earth_rotation_offset - cfg->earth_rotation_offset) > 0.0001f ||
-        cache->map_w != map_w || cache->map_h != map_h ||
-        cache->sat_epoch_unix != sat->epoch_unix || cache->mean_motion != sat->mean_motion;
-    bool time_changed = sim_delta_seconds >= GROUNDTRACK_CACHE_SIM_SECONDS &&
-              real_delta_seconds >= GROUNDTRACK_CACHE_MIN_REAL_SECONDS;
-    if (structure_changed || time_changed)
-        RebuildGroundTrack2DCache(cache, sat, cfg, current_epoch, map_w, map_h,
-                        past_orbits, future_orbits, segments_per_orbit);
-    return cache;
-}
-
-static void DrawGroundTrack2D(Satellite *sat, const AppConfig *cfg, double current_epoch,
-                    float map_w, float map_h, float zoom, float alpha,
-                    bool highlighted, Color track_color, int past_orbits,
-                    int future_orbits)
-{
-    past_orbits = Clamp2DTrackOrbits(past_orbits);
-    future_orbits = Clamp2DTrackOrbits(future_orbits);
-    if (past_orbits + future_orbits <= 0) return;
-
-    GroundTrack2DCache *cache = GetGroundTrack2DCache(sat, cfg, current_epoch, map_w, map_h,
-                                             zoom, past_orbits, future_orbits);
-    for (int offset_i = -1; offset_i <= 1; offset_i++)
-    {
-        float x_off = offset_i * map_w;
-        for (int j = 1; j <= cache->segments; j++)
-        {
-  bool is_past = (j <= cache->past_segments);
-  if (is_past && j != cache->past_segments && ((j / 3) % 2) != 0) continue;
-  if (fabsf(cache->points[j].x - cache->points[j - 1].x) >= map_w * 0.6f) continue;
-
-  float time_alpha = is_past ? 0.45f : 0.95f;
-  if (cfg->highlight_sunlit && !cache->sunlit[j]) time_alpha *= 0.45f;
-  DrawLineEx((Vector2){cache->points[j - 1].x + x_off, cache->points[j - 1].y},
-             (Vector2){cache->points[j].x + x_off, cache->points[j].y},
-             (highlighted ? 2.6f : 1.7f) / fmaxf(zoom, 0.10f),
-             ApplyAlpha(track_color, alpha * time_alpha));
-        }
-    }
-}
-
 
 /* * shaders for day/night transition
  * uses dot product between surface normal and sun direction
