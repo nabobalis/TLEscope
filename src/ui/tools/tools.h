@@ -19,6 +19,7 @@
 
 void DrawPanelSatMgr(UIContext *ctx, AppConfig *cfg);
 void DrawPanelDataSources(UIContext *ctx, AppConfig *cfg);
+void DrawPanelDataSourcesWithProxy(UIContext *ctx, AppConfig *cfg);
 void DrawPanelLayers(UIContext *ctx, AppConfig *cfg);
 void DrawPanelTimeCtrl(UIContext *ctx, AppConfig *cfg);
 void DrawPanelScope(UIContext *ctx, AppConfig *cfg);
