@@ -30,7 +30,7 @@ jobs:
           end=$((shader - 1))
           test -n "$start"
           test -n "$shader"
-          clang-format -i -lines="$start:$end" src/main.c
+          clang-format -style=LLVM -i -lines="$start:$end" src/main.c
 
       - name: Build Linux
         run: make linux
