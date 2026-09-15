@@ -17,6 +17,36 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Prepare current macOS link rule
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("Makefile")
+          text = path.read_text()
+
+          old_ldflags = "LDFLAGS_MACOS = $(RAYLIB_LIB) -lcurl -framework OpenGL -framework Cocoa -framework IOKit -framework CoreAudio -framework CoreVideo"
+          new_ldflags = old_ldflags + " -framework QuartzCore"
+          if old_ldflags not in text:
+              raise SystemExit("unexpected macOS linker flags in Makefile")
+          text = text.replace(old_ldflags, new_ldflags, 1)
+
+          old_target = "bin/TLEscope-macos: raylib $(SRC) $(CJSON_SRC) | bin"
+          new_target = "bin/TLEscope-macos: raylib $(SRC) $(IMGUI_SRC) $(RLIMGUI_SRC) $(CJSON_SRC) | bin"
+          if old_target not in text:
+              raise SystemExit("unexpected macOS target prerequisites in Makefile")
+          text = text.replace(old_target, new_target, 1)
+
+          old_link = "\t$(CC_MACOS) $(CXXFLAGS) $(RAYLIB_CFLAGS) -o $@ $^ $(LDFLAGS_MACOS)"
+          fixed_link = "\t$(CC_MACOS) $(CXXFLAGS) $(RAYLIB_CFLAGS) -o $@ $(filter-out raylib,$^) $(LDFLAGS_MACOS)"
+          if old_link in text:
+              text = text.replace(old_link, fixed_link, 1)
+          elif fixed_link not in text:
+              raise SystemExit("unexpected macOS linker command in Makefile")
+
+          path.write_text(text)
+          PY
+
       - name: Build portable macOS binary
         run: make macos
 
