@@ -49,6 +49,7 @@ void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
     (void)sctx; (void)cfg;
     static bool clean = false;
     static bool saved_left = true, saved_right = true, saved_bottom = true;
+    if (!ImGui::GetCurrentContext()) return;
     if (!ImGui::GetIO().WantTextInput && IsKeyPressed(KEY_H))
     {
         clean = !clean;
