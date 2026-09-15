@@ -180,6 +180,8 @@ static long data_tle_epoch = -1;
 enum { PULL_IDLE = 0, PULL_BUSY, PULL_DONE, PULL_ERROR };
 static volatile int pull_state = PULL_IDLE;
 static volatile bool pull_partial = false;
+static char pull_error_detail[512] = "";
+static bool edit_tle_proxy = false;
 static AppConfig *pull_cfg = NULL;
 #if defined(_WIN32) || defined(_WIN64)
 static HANDLE pull_thread = NULL;
@@ -483,20 +485,30 @@ static size_t write_memory_callback(void *contents, size_t size, size_t nmemb, v
     return realsize;
 }
 
-static bool DownloadTLESource(CURL *curl, const char *url, FILE *out)
+static bool DownloadTLESource(CURL *curl, const char *url, FILE *out, const AppConfig *cfg)
 {
     if (!curl || !url || !out) return false;
 
     struct MemoryStruct chunk;
     chunk.memory = malloc(1);
     chunk.size = 0;
+    char curl_error[CURL_ERROR_SIZE] = {0};
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_memory_callback);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, ""); /* handle compression */
-    
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, curl_error);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 45L);
+
+    /* libcurl already honors http_proxy/HTTPS_PROXY/ALL_PROXY.  This optional
+       setting is mainly for GUI-launched apps that do not inherit shell proxy
+       variables (common on managed macOS systems). */
+    if (cfg && cfg->tle_proxy[0] != '\0')
+        curl_easy_setopt(curl, CURLOPT_PROXY, cfg->tle_proxy);
+
     char user_agent[256];
     snprintf(user_agent, sizeof(user_agent), "Mozilla 5.0 (compatible; TLEscope/%s; +https://github.com/aweeri/TLEscope)", TLESCOPE_VERSION);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent);
@@ -517,7 +529,9 @@ static bool DownloadTLESource(CURL *curl, const char *url, FILE *out)
     }
     else
     {
-        printf("Failed to download %s: %s (HTTP %ld)\n", url, curl_easy_strerror(res), http_code);
+        const char *detail = curl_error[0] ? curl_error : curl_easy_strerror(res);
+        snprintf(pull_error_detail, sizeof(pull_error_detail), "%s | %s | HTTP %ld", url, detail, http_code);
+        printf("Failed to download %s: %s (HTTP %ld)\n", url, detail, http_code);
     }
 
     free(chunk.memory);
@@ -548,9 +562,11 @@ static void *PullTLEThread(void *arg)
     (void)arg;
     AppConfig *cfg = pull_cfg;
 
-    FILE *out = fopen("data.tle", "wb");
+    FILE *out = fopen("data.tle.tmp", "wb");
     if (!out)
     {
+        snprintf(pull_error_detail, sizeof(pull_error_detail), "Could not create data.tle.tmp");
+        __sync_synchronize();
         pull_state = PULL_ERROR;
         return NULL;
     }
@@ -566,33 +582,63 @@ static void *PullTLEThread(void *arg)
     fprintf(out, "# EPOCH:%ld MASK:%u CUST_MASK:%u RET_MASK:%u\r\n", (long)time(NULL), mask, cust_mask, ret_mask);
 
     int ok_count = 0, fail_count = 0;
-    CURL *curl = curl_easy_init();
-    if (curl)
+    if (mask == 0 && ret_mask == 0 && cust_mask == 0)
     {
-        for (int i = 0; i < NUM_RETLECTOR_SOURCES; i++)
-            if (ret_mask & (1 << i))
-            { if (DownloadTLESource(curl, RETLECTOR_SOURCES[i].url, out)) ok_count++; else fail_count++; }
-
-        for (int i = 0; i < 25; i++)
-            if (mask & (1 << i))
-            { if (DownloadTLESource(curl, SOURCES[i].url, out)) ok_count++; else fail_count++; }
-
-        for (int i = 0; i < cfg->custom_tle_source_count; i++)
-            if (cust_mask & (1 << i))
-            { if (DownloadTLESource(curl, cfg->custom_tle_sources[i].url, out)) ok_count++; else fail_count++; }
-
-        curl_easy_cleanup(curl);
+        snprintf(pull_error_detail, sizeof(pull_error_detail), "No TLE sources selected");
+        fail_count = 1;
     }
     else
     {
-        printf("Failed to initialize libcurl.\n");
+        CURL *curl = curl_easy_init();
+        if (curl)
+        {
+            for (int i = 0; i < NUM_RETLECTOR_SOURCES; i++)
+                if (ret_mask & (1 << i))
+                { if (DownloadTLESource(curl, RETLECTOR_SOURCES[i].url, out, cfg)) ok_count++; else fail_count++; }
+
+            for (int i = 0; i < 25; i++)
+                if (mask & (1 << i))
+                { if (DownloadTLESource(curl, SOURCES[i].url, out, cfg)) ok_count++; else fail_count++; }
+
+            for (int i = 0; i < cfg->custom_tle_source_count; i++)
+                if (cust_mask & (1 << i))
+                { if (DownloadTLESource(curl, cfg->custom_tle_sources[i].url, out, cfg)) ok_count++; else fail_count++; }
+
+            curl_easy_cleanup(curl);
+        }
+        else
+        {
+            snprintf(pull_error_detail, sizeof(pull_error_detail), "Failed to initialize libcurl");
+            fail_count = 1;
+            printf("Failed to initialize libcurl.\n");
+        }
     }
 
     fclose(out);
 
+    if (ok_count > 0)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+        remove("data.tle");
+#endif
+        if (rename("data.tle.tmp", "data.tle") != 0)
+        {
+            snprintf(pull_error_detail, sizeof(pull_error_detail), "Downloaded TLEs but could not replace data.tle");
+            remove("data.tle.tmp");
+            __sync_synchronize();
+            pull_state = PULL_ERROR;
+            return NULL;
+        }
+    }
+    else
+    {
+        /* A failed refresh must never wipe the last known-good TLE cache. */
+        remove("data.tle.tmp");
+    }
+
     pull_partial = (ok_count > 0 && fail_count > 0);
-    __sync_synchronize(); /* ensure pull_partial is visible before pull_state on ARM */
-    if (fail_count > 0 && ok_count == 0) pull_state = PULL_ERROR;
+    __sync_synchronize(); /* publish error text/partial flag before state */
+    if (ok_count == 0) pull_state = PULL_ERROR;
     else pull_state = PULL_DONE;
     return NULL;
 }
@@ -605,6 +651,7 @@ static void PullTLEThreadWin(void *arg) { PullTLEThread(arg); }
 static void PullTLEData(AppConfig *cfg)
 {
     if (pull_state == PULL_BUSY) return;
+    pull_error_detail[0] = '\0';
     pull_state = PULL_BUSY;
     pull_partial = false;
     pull_cfg = cfg;
@@ -917,7 +964,7 @@ static bool IsAnyEditModeActive(void)
         &edit_hour, &edit_min, &edit_sec,
         &edit_unix,
         &edit_doppler_freq, &edit_doppler_res, &edit_doppler_file,
-        &edit_sat_search, &edit_min_el,
+        &edit_sat_search, &edit_tle_proxy, &edit_min_el,
         &edit_hl_name, &edit_hl_lat, &edit_hl_lon, &edit_hl_alt,
         &edit_fps, &edit_new_tle,
         &edit_scope_az, &edit_scope_el, &edit_scope_beam,
@@ -2350,9 +2397,31 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
                 if (pull_state == PULL_BUSY) GuiDisable();
                 if (GuiButton((Rectangle){tm_x + tmMgrWindow.width - 110 * cfg->ui_scale, tm_y + 30 * cfg->ui_scale, 100 * cfg->ui_scale, 26 * cfg->ui_scale}, btn_label))
                 {
+                    SaveAppConfig("settings.json", cfg);
                     PullTLEData(cfg);
                 }
                 if (pull_state == PULL_BUSY) GuiEnable();
+            }
+
+            GuiLabel((Rectangle){tm_x + 10 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, 50 * cfg->ui_scale, 24 * cfg->ui_scale}, "Proxy:");
+            AdvancedTextBox((Rectangle){tm_x + 62 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, tmMgrWindow.width - 132 * cfg->ui_scale, 24 * cfg->ui_scale},
+                            cfg->tle_proxy, sizeof(cfg->tle_proxy), &edit_tle_proxy, false);
+            GuiSetTooltip("Optional proxy URL, e.g. http://proxy.example:8080. Leave blank for libcurl defaults/environment.");
+            if (GuiButton((Rectangle){tm_x + tmMgrWindow.width - 62 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, 52 * cfg->ui_scale, 24 * cfg->ui_scale}, "Save"))
+                SaveAppConfig("settings.json", cfg);
+
+            if (pull_error_detail[0] != '\0')
+            {
+                char short_error[80];
+                size_t err_len = strlen(pull_error_detail);
+                snprintf(short_error, sizeof(short_error), "%.68s%s", pull_error_detail, err_len > 68 ? "..." : "");
+                DrawUIText(customFont, short_error, tm_x + 10 * cfg->ui_scale, tm_y + 96 * cfg->ui_scale, 12 * cfg->ui_scale, (Color){235, 110, 110, 255});
+                if (GuiButton((Rectangle){tm_x + tmMgrWindow.width - 62 * cfg->ui_scale, tm_y + 92 * cfg->ui_scale, 52 * cfg->ui_scale, 22 * cfg->ui_scale}, "Copy"))
+                    SetClipboardText(pull_error_detail);
+            }
+            else
+            {
+                DrawUIText(customFont, "Proxy blank = libcurl environment/direct connection", tm_x + 10 * cfg->ui_scale, tm_y + 96 * cfg->ui_scale, 12 * cfg->ui_scale, cfg->text_secondary);
             }
 
             float total_height = 28 * cfg->ui_scale + (retlector_expanded ? NUM_RETLECTOR_SOURCES * 25 * cfg->ui_scale : 0);
@@ -2372,7 +2441,7 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
             GuiSetStyle(LISTVIEW, BORDER_COLOR_FOCUSED, ColorToInt(cfg->window_border_focus));
             GuiSetStyle(LISTVIEW, BORDER_COLOR_PRESSED, ColorToInt(cfg->window_border_focus));
 
-            GuiScrollPanel((Rectangle){tm_x + 8 * cfg->ui_scale, tm_y + 65 * cfg->ui_scale, tmMgrWindow.width - 16 * cfg->ui_scale, tmMgrWindow.height - 65 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &tle_mgr_scroll, &viewRec);
+            GuiScrollPanel((Rectangle){tm_x + 8 * cfg->ui_scale, tm_y + 122 * cfg->ui_scale, tmMgrWindow.width - 16 * cfg->ui_scale, tmMgrWindow.height - 122 * cfg->ui_scale - 8 * cfg->ui_scale}, NULL, contentRec, &tle_mgr_scroll, &viewRec);
 
             GuiSetStyle(DEFAULT, BORDER_COLOR_FOCUSED, oldFocusD);
             GuiSetStyle(DEFAULT, BORDER_COLOR_PRESSED, oldPressD);

@@ -173,6 +173,7 @@ void LoadAppConfig(const char *filename, AppConfig *config)
     config->show_first_run_dialog = false; //default
     config->hint_vsync = true;       // default
     config->custom_tle_source_count = 0;
+    config->tle_proxy[0] = '\0';
     config->mission_track_color_count = 0;
     config->groundtrack_past_orbits = 1;
     config->groundtrack_future_orbits = 2;
@@ -248,6 +249,18 @@ void LoadAppConfig(const char *filename, AppConfig *config)
             config->show_first_run_dialog = ParseJsonBool(text, "show_first_run_dialog", config->show_first_run_dialog);
             config->show_2d_mission_labels = ParseJsonBool(text, "show_2d_mission_labels", config->show_2d_mission_labels);
             config->show_2d_footprints = ParseJsonBool(text, "show_2d_footprints", config->show_2d_footprints);
+
+            ptr = strstr(text, "\"tle_proxy\"");
+            if (ptr)
+            {
+                ptr = strchr(ptr, ':');
+                if (ptr)
+                {
+                    char *quote_start = strchr(ptr, '\"');
+                    if (quote_start)
+                        sscanf(quote_start + 1, "%255[^\"]", config->tle_proxy);
+                }
+            }
 
             // load manual TLEs
             char *mt_ptr = strstr(text, "\"manual_tles\"");
@@ -576,6 +589,7 @@ void SaveAppConfig(const char *filename, AppConfig *config)
     fprintf(file, "    \"show_skybox\": %s,\n", config->show_skybox ? "true" : "false");
     fprintf(file, "    \"hint_vsync\": %s,\n", config->hint_vsync ? "true" : "false");
     fprintf(file, "    \"show_first_run_dialog\": %s,\n", config->show_first_run_dialog ? "true" : "false");
+    fprintf(file, "    \"tle_proxy\": \"%s\",\n", config->tle_proxy);
 
     if (config->mission_track_color_count > 0)
     {

@@ -105,6 +105,7 @@ typedef struct
 
     CustomTLESource custom_tle_sources[MAX_CUSTOM_TLE_SOURCES];
     int custom_tle_source_count;
+    char tle_proxy[256];
 
     char manual_tles[MAX_MANUAL_TLES][512];
     int manual_tle_count;
