@@ -68,3 +68,9 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
 
     ImGui::PopTextWrapPos();
 }
+
+void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
+{
+    (void)sctx;
+    (void)cfg;
+}
