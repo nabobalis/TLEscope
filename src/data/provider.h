@@ -15,7 +15,6 @@
 #include <stdbool.h>
 
 // -- Provider Types ----------------------------------------------------------
-
 typedef enum {
     PROVIDER_CELESTRAK,
     PROVIDER_RETLECTOR,
@@ -23,9 +22,8 @@ typedef enum {
 } ProviderType;
 
 // -- Data Source Definition --------------------------------------------------
-
 typedef struct {
-    char id[16];
+    char id[32];
     char name[64];
     char base_url[256];
     ProviderType type;
@@ -34,7 +32,6 @@ typedef struct {
 } DataSource;
 
 // -- Fetch Result ------------------------------------------------------------
-
 typedef struct {
     char *data;
     size_t size;
@@ -44,7 +41,6 @@ typedef struct {
 } FetchResult;
 
 // -- Provider Operations -----------------------------------------------------
-
 typedef struct {
     const char *name;
     bool (*build_url)(const DataSource *source, OrbitalDataFormat format,
