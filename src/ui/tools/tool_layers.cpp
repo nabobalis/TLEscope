@@ -4,12 +4,15 @@
 
 #include "tools.h"
 #include "tools_common.h"
+#include "core/astro.h"
 #include "core/theme.h"
 #include "core/config.h"
 #include "ui/labels.h"
 #include "ui/tools/tools_settings.h"
 
+#include <cmath>
 #include <raylib.h>
+#include <raymath.h>
 
 #include "imgui.h"
 #include "IconsFontAwesome6.h"
@@ -92,8 +95,78 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
     ImGui::PopTextWrapPos();
 }
 
+static void DrawFutureTrack2D(const SceneContext *sctx, const AppConfig *cfg, Satellite *sat)
+{
+    if (sat->mean_motion <= 0.0 || cfg->orbits_to_draw <= 0.0f)
+        return;
+
+    int segments = (int)(400.0f * cfg->orbits_to_draw);
+    if (segments < 50) segments = 50;
+    if (segments > 4000) segments = 4000;
+
+    Vector2 points[4001];
+    bool sunlit[4001] = { false };
+    const double period_days = (2.0 * PI / sat->mean_motion) / 86400.0;
+    const double time_step = (period_days * cfg->orbits_to_draw) / segments;
+    const Vector3 sun_dir = cfg->highlight_sunlit
+        ? Vector3Normalize(calculate_sun_position(sctx->current_epoch))
+        : Vector3Zero();
+
+    for (int j = 0; j <= segments; ++j)
+    {
+        const double t = (j == 0)
+            ? sctx->current_epoch
+            : (sctx->current_epoch - fmod(sctx->current_epoch, time_step) + j * time_step);
+        const Vector3 raw_pos = calculate_position(sat, get_unix_from_epoch(t));
+        get_map_coordinates(raw_pos, epoch_to_gmst(t), sctx->earth_rotation_offset,
+                            sctx->map_w, sctx->map_h, &points[j].x, &points[j].y);
+        if (cfg->highlight_sunlit)
+            sunlit[j] = !is_sat_eclipsed(raw_pos, sun_dir);
+    }
+
+    for (int offset = -1; offset <= 1; ++offset)
+    {
+        const float x_off = offset * sctx->map_w;
+        for (int j = 1; j <= segments; ++j)
+        {
+            if (fabsf(points[j].x - points[j - 1].x) >= sctx->map_w * 0.6f)
+                continue;
+
+            Color color = g_theme.world.orbit_normal;
+            if (cfg->highlight_sunlit && sunlit[j])
+                color = g_theme.world.sat_highlighted;
+            DrawLineEx((Vector2){ points[j - 1].x + x_off, points[j - 1].y },
+                       (Vector2){ points[j].x + x_off, points[j].y },
+                       2.0f / sctx->camera2d->zoom, color);
+        }
+    }
+}
+
 void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
 {
-    (void)sctx;
-    (void)cfg;
+    if (!sctx->is_2d_view || !sctx->camera2d || sctx->is_pov_mode)
+        return;
+
+    Vector2 map_min = GetWorldToScreen2D((Vector2){ -sctx->map_w / 2.0f, -sctx->map_h / 2.0f }, *sctx->camera2d);
+    Vector2 map_max = GetWorldToScreen2D((Vector2){ sctx->map_w / 2.0f, sctx->map_h / 2.0f }, *sctx->camera2d);
+    int sc_x = (int)map_min.x;
+    int sc_y = (int)map_min.y;
+    int sc_w = (int)(map_max.x - map_min.x);
+    int sc_h = (int)(map_max.y - map_min.y);
+    if (sc_x < 0) { sc_w += sc_x; sc_x = 0; }
+    if (sc_y < 0) { sc_h += sc_y; sc_y = 0; }
+    if (sc_x + sc_w > GetScreenWidth()) sc_w = GetScreenWidth() - sc_x;
+    if (sc_y + sc_h > GetScreenHeight()) sc_h = GetScreenHeight() - sc_y;
+    if (sc_w <= 0 || sc_h <= 0)
+        return;
+
+    BeginScissorMode(sc_x, sc_y, sc_w, sc_h);
+    for (int i = 0; i < sat_count; ++i)
+    {
+        Satellite *sat = &satellites[i];
+        if (!sat->is_active || sat == sctx->active_sat)
+            continue; /* upstream already draws the highlighted satellite track */
+        DrawFutureTrack2D(sctx, cfg, sat);
+    }
+    EndScissorMode();
 }
