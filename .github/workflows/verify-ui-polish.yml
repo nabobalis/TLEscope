@@ -1,0 +1,75 @@
+name: Verify responsive UI polish
+
+on:
+  push:
+    branches:
+      - feature/multi-groundtracks-macos-app
+    paths:
+      - .github/workflows/verify-ui-polish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/multi-groundtracks-macos-app
+      - name: Apply UI patch
+        run: python3 .github/apply-ui-polish.py
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev libwayland-dev libxkbcommon-dev libcurl4-openssl-dev
+      - name: Build Linux
+        run: make linux
+      - name: Commit verified source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/types.h src/config.c src/ui.c src/main.c
+          git commit -m "ui: improve TLE diagnostics and responsive track legend"
+          git push origin HEAD:feature/multi-groundtracks-macos-app
+
+  macos-intel:
+    runs-on: macos-15-intel
+    env:
+      RAYLIB_VERSION: "5.5"
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/multi-groundtracks-macos-app
+      - name: Apply UI patch
+        run: python3 .github/apply-ui-polish.py
+      - name: Build patched static Raylib
+        run: |
+          curl -fsSL "https://github.com/raysan5/raylib/archive/refs/tags/${RAYLIB_VERSION}.tar.gz" -o raylib.tar.gz
+          tar -xzf raylib.tar.gz
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("raylib-5.5/src/external/glfw/src/input.c")
+          s = p.read_text()
+          needle = "    assert(button <= GLFW_MOUSE_BUTTON_LAST);\n"
+          guard = "    if (button < 0 || button > GLFW_MOUSE_BUTTON_LAST)\n        return;\n"
+          if s.count(needle) != 1 or guard not in s:
+              raise SystemExit("unexpected GLFW mouse-button guard")
+          p.write_text(s.replace(needle, "", 1))
+          PY
+          make -C "raylib-${RAYLIB_VERSION}/src" \
+            PLATFORM=PLATFORM_DESKTOP \
+            RAYLIB_LIBTYPE=STATIC \
+            CUSTOM_CFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET} -DGL_SILENCE_DEPRECATION"
+          mkdir -p .deps/raylib/include .deps/raylib/lib
+          cp "raylib-${RAYLIB_VERSION}/src/raylib.h" "raylib-${RAYLIB_VERSION}/src/raymath.h" "raylib-${RAYLIB_VERSION}/src/rlgl.h" .deps/raylib/include/
+          cp "raylib-${RAYLIB_VERSION}/src/libraylib.a" .deps/raylib/lib/
+      - name: Build and verify Intel app
+        run: |
+          make app \
+            RAYLIB_CFLAGS="-I$PWD/.deps/raylib/include" \
+            RAYLIB_LIBS="$PWD/.deps/raylib/lib/libraylib.a" \
+            MACOS_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
+          file dist/TLEscope.app/Contents/MacOS/TLEscope | grep -q 'x86_64'
+          codesign --verify --deep --strict dist/TLEscope.app
