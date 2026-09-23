@@ -113,8 +113,8 @@ void DrawSceneLabels(UIContext *ctx, AppConfig *cfg)
     {
         Vector2 m0 = GetWorldToScreen2D((Vector2){-ctx->map_w / 2.0f, -ctx->map_h / 2.0f}, *ctx->camera2d);
         Vector2 m1 = GetWorldToScreen2D((Vector2){ ctx->map_w / 2.0f,  ctx->map_h / 2.0f}, *ctx->camera2d);
-        clipMin = ImVec2(fmaxf(m0.x, 0.0f), fmaxf(m0.y, 0.0f));
-        clipMax = ImVec2(fminf(m1.x, ImGui::GetIO().DisplaySize.x),
+        clipMin = ImVec2(0.0f, fmaxf(m0.y, 0.0f));
+        clipMax = ImVec2(ImGui::GetIO().DisplaySize.x,
                          fminf(m1.y, ImGui::GetIO().DisplaySize.y));
     }
 

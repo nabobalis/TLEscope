@@ -10,6 +10,7 @@
 #include "ui/ui_layout.h"
 #include "ui/tools/tools_settings.h"
 #include "map_detail_data.h"
+#include "render/map_view.h"
 
 #include <raylib.h>
 #include <raymath.h> /* DEG2RAD for the 3D sphere mapping */
@@ -346,15 +347,21 @@ static void DrawMapDetailLines(const SceneContext *sctx, const MapDetailPoint *p
     Color color = g_theme.ui.text;
     color.a = (unsigned char)(color.a * alpha);
 
-    for (int i = 0; i < line_count; i++)
+    for (int k = -1; k <= 1; k++)
     {
-        const int end = lines[i].start + lines[i].count;
-        for (int p = lines[i].start; p + 1 < end; p++)
+        if (!MapCopyVisible(*sctx->camera2d, sctx->map_w, k))
+            continue;
+        const float x_off = k * sctx->map_w;
+        for (int i = 0; i < line_count; i++)
         {
-            Vector2 a = MapDetailToWorld(points[p], sctx->map_w, sctx->map_h);
-            Vector2 b = MapDetailToWorld(points[p + 1], sctx->map_w, sctx->map_h);
-            if (fabsf(a.x - b.x) <= sctx->map_w * 0.45f)
-                DrawLineEx(a, b, line_width, color);
+            const int end = lines[i].start + lines[i].count;
+            for (int p = lines[i].start; p + 1 < end; p++)
+            {
+                Vector2 a = MapDetailToWorld(points[p], sctx->map_w, sctx->map_h);
+                Vector2 b = MapDetailToWorld(points[p + 1], sctx->map_w, sctx->map_h);
+                if (fabsf(a.x - b.x) <= sctx->map_w * 0.45f)
+                    DrawLineEx({a.x + x_off, a.y}, {b.x + x_off, b.y}, line_width, color);
+            }
         }
     }
 }
@@ -551,17 +558,20 @@ void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
 
         const int spacing = GRID_SPACINGS[GridSpacingIndex(cfg)];
 
-        /* lines fall on multiples of the spacing from the prime meridian/equator, never on the map edges */
-        const int lon_max = (179 / spacing) * spacing;
-        for (int lon = -lon_max; lon <= lon_max; lon += spacing)
+        for (int k = -1; k <= 1; k++)
         {
-            const float x = ((float)lon / 360.0f) * sctx->map_w;
-            const bool prime_meridian = lon == 0;
-            DrawLineEx(
-                {x, -sctx->map_h * 0.5f},
-                {x, sctx->map_h * 0.5f},
-                prime_meridian ? strong_width : thin_width,
-                prime_meridian ? strong_color : thin_color);
+            if (!MapCopyVisible(*sctx->camera2d, sctx->map_w, k))
+                continue;
+            for (int lon = -180 + spacing; lon <= 180; lon += spacing)
+            {
+                const float x = ((float)lon / 360.0f) * sctx->map_w + k * sctx->map_w;
+                const bool prime_meridian = lon == 0;
+                DrawLineEx(
+                    {x, -sctx->map_h * 0.5f},
+                    {x, sctx->map_h * 0.5f},
+                    prime_meridian ? strong_width : thin_width,
+                    prime_meridian ? strong_color : thin_color);
+            }
         }
 
         const int lat_max = (89 / spacing) * spacing;
@@ -570,8 +580,8 @@ void DrawSceneLayers(SceneContext *sctx, AppConfig *cfg)
             const float y = -((float)lat / 180.0f) * sctx->map_h;
             const bool equator = lat == 0;
             DrawLineEx(
-                {-sctx->map_w * 0.5f, y},
-                {sctx->map_w * 0.5f, y},
+                {-sctx->map_w * 1.5f, y},
+                {sctx->map_w * 1.5f, y},
                 equator ? strong_width : thin_width,
                 equator ? strong_color : thin_color);
         }
@@ -622,8 +632,8 @@ void DrawMapGridLabels(UIContext *ctx, AppConfig *cfg)
     
     Vector2 vis_a = GetScreenToWorld2D((Vector2){left_edge, nav_h}, *ctx->camera2d);
     Vector2 vis_b = GetScreenToWorld2D((Vector2){right_edge, screen_h}, *ctx->camera2d);
-    const float clip_min_x = fmaxf(fminf(vis_a.x, vis_b.x), -map_w * 0.5f);
-    const float clip_max_x = fminf(fmaxf(vis_a.x, vis_b.x), map_w * 0.5f);
+    const float clip_min_x = fminf(vis_a.x, vis_b.x);
+    const float clip_max_x = fmaxf(vis_a.x, vis_b.x);
     const float clip_min_y = fmaxf(fminf(vis_a.y, vis_b.y), -map_h * 0.5f);
     const float clip_max_y = fminf(fmaxf(vis_a.y, vis_b.y), map_h * 0.5f);
     if (clip_min_x >= clip_max_x || clip_min_y >= clip_max_y)
@@ -666,15 +676,17 @@ void DrawMapGridLabels(UIContext *ctx, AppConfig *cfg)
         dl->AddText(font, font_size, pos, col, buf);
     }
 
-    /* longitude labels along the top edge of the visible map */
-    const int lon_max = (179 / spacing) * spacing;
-    for (int lon = -lon_max; lon <= lon_max; lon += spacing)
+    /* longitude labels along the top edge of each visible wrap copy */
+    for (int k = -1; k <= 1; k++)
+    for (int lon = -180 + spacing; lon <= 180; lon += spacing)
     {
-        const float x = ((float)lon / 360.0f) * map_w;
+        const float x = ((float)lon / 360.0f) * map_w + k * map_w;
         if (x < clip_min_x || x > clip_max_x)
             continue;
 
-        if (lon > 0)
+        if (lon == 180)
+            snprintf(buf, sizeof(buf), "180°");
+        else if (lon > 0)
             snprintf(buf, sizeof(buf), "%d°E", lon);
         else if (lon < 0)
             snprintf(buf, sizeof(buf), "%d°W", -lon);
