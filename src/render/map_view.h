@@ -14,6 +14,14 @@ inline float MapFillZoom(float map_w, float map_h)
     return fmaxf((float)GetScreenWidth() / map_w, (float)GetScreenHeight() / map_h);
 }
 
+/* Does horizontal wrap copy k (-1, 0, +1) intersect the viewport? */
+inline bool MapCopyVisible(const Camera2D &cam, float map_w, int k)
+{
+    float min_x = cam.target.x - cam.offset.x / cam.zoom;
+    float max_x = cam.target.x + ((float)GetScreenWidth() - cam.offset.x) / cam.zoom;
+    return k * map_w + map_w * 0.5f > min_x && k * map_w - map_w * 0.5f < max_x;
+}
+
 inline void BeginMapMode2D(Camera2D camera)
 {
     Matrix screen_transform = rlGetMatrixModelview();

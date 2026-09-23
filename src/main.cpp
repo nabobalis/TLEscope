@@ -1135,6 +1135,7 @@ int main(void)
 
                     float mx, my;
                     get_map_coordinates(satellites[i].current_pos, gmst_deg, cfg.earth_rotation_offset, map_w, map_h, &mx, &my);
+                    mx += map_w * roundf((Camera2DParams.target.x - mx) / map_w);
 
                     Vector2 screenPos = GetWorldToScreen2D((Vector2){mx, my}, Camera2DParams);
                     float dist = Vector2Distance(mousePos, screenPos);
@@ -1372,6 +1373,14 @@ int main(void)
                 target_camera3d_target = draw_moon_pos;
         }
 
+        /* Keep the horizontal target on the nearest map copy so panning can
+         * cross the antimeridian without the interpolation jumping a seam. */
+        {
+            const float shift = -map_w * floorf((target_camera2d_target.x + map_w * 0.5f) / map_w);
+            target_camera2d_target.x += shift;
+            Camera2DParams.target.x += shift;
+        }
+
         /* Keep the map covering the viewport and prevent vertical panning
          * beyond the north/south edges. */
         if (target_camera2d_zoom < fill_zoom)
@@ -1524,7 +1533,8 @@ int main(void)
                     SetShaderValue(shader2D, moonPosLoc2D, &moonEcef, SHADER_UNIFORM_VEC3);
                 }
 
-                DrawTexturePro(earthTexture, (Rectangle){0, 0, earthTexture.width, earthTexture.height}, (Rectangle){-map_w / 2, -map_h / 2, map_w, map_h}, (Vector2){0, 0}, 0.0f, WHITE);
+                for (int k = -1; k <= 1; k++)
+                    DrawTexturePro(earthTexture, (Rectangle){0, 0, earthTexture.width, earthTexture.height}, (Rectangle){k * map_w - map_w / 2, -map_h / 2, map_w, map_h}, (Vector2){0, 0}, 0.0f, WHITE);
 
                 if (cfg.show_night_lights)
                     EndShaderMode();
@@ -1532,28 +1542,21 @@ int main(void)
             else
             {
                 /* earth texture disabled: plain black body underneath the overlays */
-                DrawRectangle((int)(-map_w / 2.0f), (int)(-map_h / 2.0f), (int)map_w, (int)map_h, BLACK);
+                DrawRectangle((int)(-map_w * 1.5f), (int)(-map_h / 2.0f), (int)(map_w * 3.0f), (int)map_h, BLACK);
             }
 
-            /* scissor mode for map boundaries */
+            /* The map wraps horizontally, so scissor only to its vertical extent. */
             Vector2 mapMin = GetWorldToScreen2D((Vector2){-map_w / 2.0f, -map_h / 2.0f}, Camera2DParams);
             Vector2 mapMax = GetWorldToScreen2D((Vector2){map_w / 2.0f, map_h / 2.0f}, Camera2DParams);
 
-            int sc_x = (int)mapMin.x, sc_y = (int)mapMin.y;
-            int sc_w = (int)(mapMax.x - mapMin.x), sc_h = (int)(mapMax.y - mapMin.y);
+            int sc_x = 0, sc_y = (int)mapMin.y;
+            int sc_w = GetScreenWidth(), sc_h = (int)(mapMax.y - mapMin.y);
 
-            if (sc_x < 0)
-            {
-                sc_w += sc_x;
-                sc_x = 0;
-            }
             if (sc_y < 0)
             {
                 sc_h += sc_y;
                 sc_y = 0;
             }
-            if (sc_x + sc_w > GetScreenWidth())
-                sc_w = GetScreenWidth() - sc_x;
             if (sc_y + sc_h > GetScreenHeight())
                 sc_h = GetScreenHeight() - sc_y;
 
@@ -1584,8 +1587,8 @@ int main(void)
                     /* visible map region (camera view ∩ map rect) for culling */
                     Vector2 vis_a = GetScreenToWorld2D((Vector2){0.0f, 0.0f}, Camera2DParams);
                     Vector2 vis_b = GetScreenToWorld2D((Vector2){(float)GetScreenWidth(), (float)GetScreenHeight()}, Camera2DParams);
-                    float clip_min_x = fmaxf(fminf(vis_a.x, vis_b.x), -map_w * 0.5f);
-                    float clip_max_x = fminf(fmaxf(vis_a.x, vis_b.x), map_w * 0.5f);
+                    float clip_min_x = fminf(vis_a.x, vis_b.x);
+                    float clip_max_x = fmaxf(vis_a.x, vis_b.x);
                     float clip_min_y = fmaxf(fminf(vis_a.y, vis_b.y), -map_h * 0.5f);
                     float clip_max_y = fminf(fmaxf(vis_a.y, vis_b.y), map_h * 0.5f);
 
