@@ -228,6 +228,15 @@ void DrawPanelLayers(UIContext *ctx, AppConfig *cfg)
             ImGui::EndDisabled();
         }
 
+        /* Centre longitude used by Home and the 2D Earth lock. */
+        {
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::SliderFloat("##map_center_lon", &cfg->map_center_lon, -180.0f, 180.0f,
+                               "Centre %.0f°", ImGuiSliderFlags_AlwaysClamp);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Longitude at the centre of the 2D map. Home returns to this centre.");
+        }
+
         /* Markers */
         {
             bool val = cfg->show_markers;

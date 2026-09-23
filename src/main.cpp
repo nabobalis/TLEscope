@@ -646,11 +646,12 @@ int main(void)
     Camera2D Camera2DParams = {0};
     Camera2DParams.zoom = MapFillZoom(map_w, map_h);
     Camera2DParams.offset = (Vector2){floorf(GetScreenWidth() / 2.0f), floorf(GetScreenHeight() / 2.0f)};
-    Camera2DParams.target = (Vector2){0.0f, 0.0f};
+    Camera2DParams.target = (Vector2){(cfg.map_center_lon / 360.0f) * map_w, 0.0f};
 
     float target_camera2d_zoom = Camera2DParams.zoom;
     Vector2 target_camera2d_target = Camera2DParams.target;
     float fill_zoom = Camera2DParams.zoom;
+    float prev_map_center_lon = cfg.map_center_lon;
     float camDistance = 10.0f, camAngleX = 0.785f, camAngleY = 0.5f;
 
     float target_camDistance = camDistance;
@@ -774,6 +775,8 @@ int main(void)
         bool is_typing = IsUITyping();
         bool over_ui = IsMouseOverUI(&cfg);
 
+        const float center_x = (cfg.map_center_lon / 360.0f) * map_w;
+
         /* Keep the 2D map centered on whole pixels and preserve the user's
          * relative zoom when the window size changes. */
         Camera2DParams.offset = (Vector2){floorf(GetScreenWidth() / 2.0f), floorf(GetScreenHeight() / 2.0f)};
@@ -785,6 +788,12 @@ int main(void)
                 Camera2DParams.zoom *= new_fill / fill_zoom;
                 fill_zoom = new_fill;
             }
+        }
+        if (cfg.map_center_lon != prev_map_center_lon)
+        {
+            prev_map_center_lon = cfg.map_center_lon;
+            target_camera2d_target.x = center_x;
+            active_lock = LOCK_NONE;
         }
 
         /* input handling */
@@ -890,7 +899,7 @@ int main(void)
                 target_camAngleX = 0.785f;
                 target_camAngleY = 0.5f;
                 target_camera2d_zoom = fill_zoom;
-                target_camera2d_target = (Vector2){0.0f, 0.0f};
+                target_camera2d_target = (Vector2){center_x, 0.0f};
                 Camera3DParams.fovy = 45.0f;
             }
 
@@ -1361,7 +1370,7 @@ int main(void)
         if (active_lock == LOCK_EARTH)
         {
             if (is_2d_view)
-                target_camera2d_target = Vector2Zero();
+                target_camera2d_target = (Vector2){center_x, 0.0f};
             else
                 target_camera3d_target = Vector3Zero();
         }
