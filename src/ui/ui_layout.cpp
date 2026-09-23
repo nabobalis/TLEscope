@@ -73,6 +73,13 @@ static float GetContentHeight(float x0, float x1)
 
 UILayoutState g_layout = {0};
 
+static bool s_clean_view = false;
+static bool s_clean_left_visible = true;
+static bool s_clean_right_visible = true;
+static bool s_clean_left_hidden = false;
+static bool s_clean_right_hidden = false;
+static bool s_clean_bottom_visible = true;
+
 /* -- Internal helpers ------------------------------------------------------ */
 
 static void EnsureSidebar(SidebarSide side)
@@ -317,6 +324,33 @@ void LayoutSetSidebarVisible(SidebarSide side, bool visible)
 {
     if (side == SIDEBAR_LEFT) { g_layout.left_visible = visible; if (visible) g_layout.left_hidden = false; }
     if (side == SIDEBAR_RIGHT) { g_layout.right_visible = visible; if (visible) g_layout.right_hidden = false; }
+}
+
+bool LayoutCleanViewActive(void) { return s_clean_view; }
+
+void LayoutToggleCleanView(void)
+{
+    s_clean_view = !s_clean_view;
+    if (s_clean_view)
+    {
+        s_clean_left_visible = g_layout.left_visible;
+        s_clean_right_visible = g_layout.right_visible;
+        s_clean_left_hidden = g_layout.left_hidden;
+        s_clean_right_hidden = g_layout.right_hidden;
+        s_clean_bottom_visible = g_layout.show_bottom_bar;
+
+        g_layout.left_visible = false;
+        g_layout.right_visible = false;
+        g_layout.show_bottom_bar = false;
+    }
+    else
+    {
+        g_layout.left_visible = s_clean_left_visible;
+        g_layout.right_visible = s_clean_right_visible;
+        g_layout.left_hidden = s_clean_left_hidden;
+        g_layout.right_hidden = s_clean_right_hidden;
+        g_layout.show_bottom_bar = s_clean_bottom_visible;
+    }
 }
 
 /* -- Bottom bar helpers ----------------------------------------------------- */
@@ -1446,6 +1480,9 @@ void DrawToolsModal(UIContext *ctx, AppConfig *cfg)
 
 void DrawUILayout(UIContext *ctx, AppConfig *cfg)
 {
+    if (LayoutCleanViewActive())
+        return;
+
     s_left_hc = 0;
     s_right_hc = 0;
 

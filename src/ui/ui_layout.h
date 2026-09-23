@@ -120,6 +120,10 @@ bool LayoutToolsOpen(void);
 void LayoutOpenTools(void);
 void LayoutCloseTools(void);
 
+/* clean view (H) */
+bool LayoutCleanViewActive(void);
+void LayoutToggleCleanView(void);
+
 /* bottom bar visibility */
 bool LayoutBottomBarVisible(void);
 void LayoutSetBottomBarVisible(bool visible);

@@ -945,12 +945,14 @@ void DrawGUI(UIContext *ctx, AppConfig *cfg, Font customFont)
      * render on top of the raylib scene but behind all ImGui windows */
     DrawSceneLabels(ctx, cfg);
 
-    /* top navigation bar */
-    DrawNavBar(ctx, cfg);
+    if (!LayoutCleanViewActive())
+    {
+        DrawNavBar(ctx, cfg);
 
-    /* bottom center time notch — drawn BEFORE the sidebars so they can
-     * size themselves to its actual rendered height (g_layout.bottom_bar_top) */
-    DrawBottomBar(ctx, cfg);
+        /* bottom center time notch — drawn BEFORE the sidebars so they can
+         * size themselves to its actual rendered height (g_layout.bottom_bar_top) */
+        DrawBottomBar(ctx, cfg);
+    }
 
     /* sidebar workspace (left actions / right inspector) + transparent center */
     DrawUILayout(ctx, cfg);
