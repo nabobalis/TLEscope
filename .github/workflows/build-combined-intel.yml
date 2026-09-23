@@ -1,0 +1,51 @@
+name: Build combined features Intel macOS
+
+on:
+  push:
+    branches: ["build-combined-intel"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-intel:
+    name: Build macOS Intel app
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Build portable application
+        run: make macos
+
+      - name: Build app bundle
+        run: |
+          ./macos_bundle.sh
+          test -x dist/TLEscope.app/Contents/MacOS/TLEscope
+          test -x dist/TLEscope.app/Contents/MacOS/TLEscope.bin
+          test -f dist/TLEscope.app/Contents/Resources/themes/default/theme.json
+          test -f dist/TLEscope.app/Contents/Resources/themes/default/font.ttf
+          plutil -lint dist/TLEscope.app/Contents/Info.plist
+
+      - name: Verify Intel architecture
+        run: |
+          file dist/TLEscope.app/Contents/MacOS/TLEscope.bin
+          file dist/TLEscope.app/Contents/MacOS/TLEscope.bin | grep -q "x86_64"
+
+      - name: Package app bundle
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent             dist/TLEscope.app             dist/TLEscope-combined-features-macOS-Intel.app.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: TLEscope-combined-features-macOS-Intel
+          path: dist/TLEscope-combined-features-macOS-Intel.app.zip
+          retention-days: 14
+          if-no-files-found: error
